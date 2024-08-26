@@ -3,15 +3,17 @@
 namespace Baspa\EnergyZero;
 
 use DateTime;
-use Exception;
 use DateTimeZone;
-use Illuminate\Support\Facades\Http;
+use Exception;
 use GuzzleHttp\Exception\RequestException;
+use Illuminate\Support\Facades\Http;
 
 class EnergyZero
 {
     private bool $vat = true;
+
     private float $requestTimeout = 10.0;
+
     private string $baseUri = 'https://api.energyzero.nl/v1/';
 
     public function request(string $uri, array $params = [])
@@ -25,10 +27,10 @@ class EnergyZero
             if ($response->successful()) {
                 return $response->json();
             } else {
-                throw new Exception("Unexpected response status: " . $response->status());
+                throw new Exception('Unexpected response status: ' . $response->status());
             }
         } catch (RequestException $e) {
-            echo "Error: ", $e->getMessage(), "\n";
+            echo 'Error: ', $e->getMessage(), "\n";
         }
     }
 
@@ -60,7 +62,7 @@ class EnergyZero
         $data = $this->request('energyprices', $params);
 
         if (empty($data['Prices'])) {
-            throw new Exception("No energy prices found for this period.");
+            throw new Exception('No energy prices found for this period.');
         }
 
         return $data;
