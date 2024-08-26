@@ -3,19 +3,30 @@
 namespace Baspa\EnergyZero;
 
 use DateTime;
-use DateTimeZone;
 use Exception;
+use DateTimeZone;
+use GuzzleHttp\Client;
+use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\RequestException;
-use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Support\Facades\Http;
 
 class EnergyZero
 {
     private bool $vat = true;
-
     private int $requestTimeout = 10;
-
     private string $baseUri = 'https://api.energyzero.nl/v1/';
+    private ClientInterface $client;
+
+    public function __construct(ClientInterface $client = null)
+    {
+        $this->client = $client ?? new Client([
+            'base_uri' => $this->baseUri,
+            'timeout' => $this->requestTimeout,
+            'headers' => [
+                'Accept' => 'application/json, text/plain',
+                'User-Agent' => 'PHPEnergyZero/1.0',
+            ],
+        ]);
+    }
 
     /**
      * @param  array<string, mixed>  $params
@@ -26,23 +37,15 @@ class EnergyZero
     public function request(string $uri, array $params = []): ?array
     {
         try {
-            /** @var PendingRequest $request */
-            $request = Http::withHeaders([
-                'Accept' => 'application/json, text/plain',
-                'User-Agent' => 'PHPEnergyZero/1.0',
-            ]);
+            $response = $this->client->request('GET', $uri, ['query' => $params]);
 
-            $response = $request->timeout($this->requestTimeout)
-                ->get($this->baseUri.$uri, $params);
-
-            if ($response->successful()) {
-                return $response->json();
+            if ($response->getStatusCode() === 200) {
+                return json_decode($response->getBody()->getContents(), true);
             } else {
-                throw new Exception('Unexpected response status: '.$response->status());
+                throw new Exception('Unexpected response status: ' . $response->getStatusCode());
             }
         } catch (RequestException $e) {
-            error_log('Error: '.$e->getMessage());
-
+            error_log('Error: ' . $e->getMessage());
             return null;
         }
     }
