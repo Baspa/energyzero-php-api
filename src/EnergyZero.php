@@ -3,12 +3,11 @@
 namespace Baspa\EnergyZero;
 
 use DateTime;
-use Exception;
 use DateTimeZone;
-use Illuminate\Http\Client\Response;
-use Illuminate\Support\Facades\Http;
+use Exception;
 use GuzzleHttp\Exception\RequestException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Support\Facades\Http;
 
 class EnergyZero
 {
@@ -19,9 +18,9 @@ class EnergyZero
     private string $baseUri = 'https://api.energyzero.nl/v1/';
 
     /**
-     * @param string $uri
-     * @param array<string, mixed> $params
+     * @param  array<string, mixed>  $params
      * @return array<string, mixed>|null
+     *
      * @throws Exception
      */
     public function request(string $uri, array $params = []): ?array
@@ -34,25 +33,23 @@ class EnergyZero
             ]);
 
             $response = $request->timeout($this->requestTimeout)
-                ->get($this->baseUri . $uri, $params);
+                ->get($this->baseUri.$uri, $params);
 
             if ($response->successful()) {
                 return $response->json();
             } else {
-                throw new Exception('Unexpected response status: ' . $response->status());
+                throw new Exception('Unexpected response status: '.$response->status());
             }
         } catch (RequestException $e) {
-            error_log('Error: ' . $e->getMessage());
+            error_log('Error: '.$e->getMessage());
+
             return null;
         }
     }
 
     /**
-     * @param string $startDate
-     * @param string $endDate
-     * @param int $interval
-     * @param bool|null $vat
      * @return array<string, mixed>
+     *
      * @throws Exception
      */
     public function energyPrices(string $startDate, string $endDate, int $interval = 4, ?bool $vat = null): array
@@ -90,10 +87,6 @@ class EnergyZero
     }
 
     /**
-     * @param string $startDate
-     * @param string $endDate
-     * @param bool|null $vat
-     * @return float
      * @throws Exception
      */
     public function getAveragePriceForPeriod(string $startDate, string $endDate, ?bool $vat = null): float
@@ -104,10 +97,8 @@ class EnergyZero
     }
 
     /**
-     * @param string $startDate
-     * @param string $endDate
-     * @param bool|null $vat
      * @return array<string, mixed>
+     *
      * @throws Exception
      */
     public function getLowestPriceForPeriod(string $startDate, string $endDate, ?bool $vat = null): array
@@ -123,10 +114,8 @@ class EnergyZero
     }
 
     /**
-     * @param string $startDate
-     * @param string $endDate
-     * @param bool|null $vat
      * @return array<string, mixed>
+     *
      * @throws Exception
      */
     public function getHighestPriceForPeriod(string $startDate, string $endDate, ?bool $vat = null): array
@@ -142,44 +131,36 @@ class EnergyZero
     }
 
     /**
-     * @param string $startDate
-     * @param string $endDate
-     * @param float $threshold
-     * @param bool|null $vat
      * @return array<int, array<string, mixed>>
+     *
      * @throws Exception
      */
     public function getPricesAboveThreshold(string $startDate, string $endDate, float $threshold, ?bool $vat = null): array
     {
         $data = $this->energyPrices($startDate, $endDate, 4, $vat);
+
         return array_values(array_filter($data['Prices'], function ($price) use ($threshold) {
             return $price['price'] > $threshold;
         }));
     }
 
     /**
-     * @param string $startDate
-     * @param string $endDate
-     * @param float $threshold
-     * @param bool|null $vat
      * @return array<int, array<string, mixed>>
+     *
      * @throws Exception
      */
     public function getPricesBelowThreshold(string $startDate, string $endDate, float $threshold, ?bool $vat = null): array
     {
         $data = $this->energyPrices($startDate, $endDate, 4, $vat);
+
         return array_values(array_filter($data['Prices'], function ($price) use ($threshold) {
             return $price['price'] < $threshold;
         }));
     }
 
-
     /**
-     * @param string $startDate
-     * @param string $endDate
-     * @param int $topN
-     * @param bool|null $vat
      * @return array<int, array<string, mixed>>
+     *
      * @throws Exception
      */
     public function getPeakHours(string $startDate, string $endDate, int $topN = 5, ?bool $vat = null): array
@@ -194,11 +175,8 @@ class EnergyZero
     }
 
     /**
-     * @param string $startDate
-     * @param string $endDate
-     * @param int $topN
-     * @param bool|null $vat
      * @return array<int, array<string, mixed>>
+     *
      * @throws Exception
      */
     public function getValleyHours(string $startDate, string $endDate, int $topN = 5, ?bool $vat = null): array
