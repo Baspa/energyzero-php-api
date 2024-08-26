@@ -1,33 +1,103 @@
-# :package_description
+# PHP client for the dynamic prices from EnergyZero
 
-[![Latest Version on Packagist](https://img.shields.io/packagist/v/:vendor_slug/:package_slug.svg?style=flat-square)](https://packagist.org/packages/:vendor_slug/:package_slug)
-[![Tests](https://img.shields.io/github/actions/workflow/status/:vendor_slug/:package_slug/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/:vendor_slug/:package_slug/actions/workflows/run-tests.yml)
-[![Total Downloads](https://img.shields.io/packagist/dt/:vendor_slug/:package_slug.svg?style=flat-square)](https://packagist.org/packages/:vendor_slug/:package_slug)
-<!--delete-->
----
-This package can be used as to scaffold a framework agnostic package. Follow these steps to get started:
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/baspa/energyzero-php-api.svg?style=flat-square)](https://packagist.org/packages/baspa/energyzero-php-api)
+[![Tests](https://img.shields.io/github/actions/workflow/status/baspa/energyzero-php-api/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/baspa/energyzero-php-api/actions/workflows/run-tests.yml)
+[![PHPStan](https://img.shields.io/github/actions/workflow/status/baspa/energyzero-php-api/phpstan.yml?branch=main&label=phpstan&style=flat-square)](https://github.com/baspa/energyzero-php-api/actions/workflows/phpstan.yml)
+[![Total Downloads](https://img.shields.io/packagist/dt/baspa/energyzero-php-api.svg?style=flat-square)](https://packagist.org/packages/baspa/energyzero-php-api)
 
-1. Press the "Use template" button at the top of this repo to create a new repo with the contents of this skeleton
-2. Run "php ./configure.php" to run a script that will replace all placeholders throughout all the files
-3. Have fun creating your package.
-4. If you need help creating a package, consider picking up our <a href="https://laravelpackage.training">Laravel Package Training</a> video course.
----
-<!--/delete-->
-This is where your description should go. Try and limit it to a paragraph or two. Consider adding a small example.
+This PHP package provides a client for fetching dynamic energy prices from the EnergyZero API. It allows you to retrieve energy prices for a specified date range with customizable intervals and VAT options.
 
 ## Installation
 
 You can install the package via composer:
 
 ```bash
-composer require :vendor_slug/:package_slug
+composer require baspa/energyzero-php-api
 ```
 
 ## Usage
 
+You can fetch the energy prices for a specific date range with a specific interval and VAT option. When the VAT option is not provided, it will default to `true`. Make sure you provide a date in the format `Y-m-d`.
+
 ```php
-$skeleton = new VendorName\Skeleton();
-echo $skeleton->echoPhrase('Hello, VendorName!');
+use Baspa\EnergyZero;
+
+$prices = (new EnergyZero())->energyPrices(
+    startDate: '2024-01-01',
+    endDate: '2024-01-02',
+    interval: 4,
+    vat: true
+);
+```
+
+The response will be an array of prices for the specified date range and also include the average price for the period.
+
+### Get the lowest price for a period
+
+```php
+$lowestPrice = (new EnergyZero())->getLowestPriceForPeriod(
+    startDate: '2024-01-01',
+    endDate: '2024-01-02',
+    vat: true
+);
+```
+
+### Get the highest price for a period
+
+```php
+$highestPrice = (new EnergyZero())->getHighestPriceForPeriod(
+    startDate: '2024-01-01',
+    endDate: '2024-01-02',
+    vat: true
+);
+```
+
+### Get the prices above a threshold
+
+```php
+$prices = (new EnergyZero())->getPricesAboveThreshold(
+    startDate: '2024-01-01',
+    endDate: '2024-01-02',
+    threshold: 0.05,
+    vat: true
+);
+```
+
+### Get the prices below a threshold
+
+```php
+$prices = (new EnergyZero())->getPricesBelowThreshold(
+    startDate: '2024-01-01',
+    endDate: '2024-01-02',
+    threshold: 0.05,
+    vat: true
+);
+```
+
+### Get the peak hours
+
+Get the top N peak hours for a period.
+
+```php
+$peakHours = (new EnergyZero())->getPeakHours(
+    startDate: '2024-01-01',
+    endDate: '2024-01-02',
+    topN: 5,
+    vat: true
+);
+```
+
+### Get the valley hours
+
+Get the top N valley hours for a period.
+
+```php
+$valleyHours = (new EnergyZero())->getValleyHours(
+    startDate: '2024-01-01',
+    endDate: '2024-01-02',
+    topN: 5,
+    vat: true
+);
 ```
 
 ## Testing
@@ -50,8 +120,8 @@ Please review [our security policy](../../security/policy) on how to report secu
 
 ## Credits
 
-- [:author_name](https://github.com/:author_username)
-- [All Contributors](../../contributors)
+-   [Baspa](https://github.com/Baspa)
+-   [All Contributors](../../contributors)
 
 ## License
 
