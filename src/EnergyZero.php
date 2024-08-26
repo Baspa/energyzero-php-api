@@ -22,12 +22,12 @@ class EnergyZero
             $response = Http::withHeaders([
                 'Accept' => 'application/json, text/plain',
                 'User-Agent' => 'PHPEnergyZero/1.0',
-            ])->timeout($this->requestTimeout)->get($this->baseUri . $uri, $params);
+            ])->timeout($this->requestTimeout)->get($this->baseUri.$uri, $params);
 
             if ($response->successful()) {
                 return $response->json();
             } else {
-                throw new Exception('Unexpected response status: ' . $response->status());
+                throw new Exception('Unexpected response status: '.$response->status());
             }
         } catch (RequestException $e) {
             echo 'Error: ', $e->getMessage(), "\n";
@@ -71,6 +71,7 @@ class EnergyZero
     public function getAveragePriceForPeriod(string $startDate, string $endDate, ?bool $vat = null): float
     {
         $data = $this->energyPrices($startDate, $endDate, 4, $vat);
+
         return $data['average'];
     }
 
@@ -79,9 +80,10 @@ class EnergyZero
         $data = $this->energyPrices($startDate, $endDate, 4, $vat);
         $lowestPrice = min(array_column($data['Prices'], 'price'));
         $lowestPriceIndex = array_search($lowestPrice, array_column($data['Prices'], 'price'));
+
         return [
             'price' => $lowestPrice,
-            'datetime' => $data['Prices'][$lowestPriceIndex]['readingDate']
+            'datetime' => $data['Prices'][$lowestPriceIndex]['readingDate'],
         ];
     }
 
@@ -90,15 +92,17 @@ class EnergyZero
         $data = $this->energyPrices($startDate, $endDate, 4, $vat);
         $highestPrice = max(array_column($data['Prices'], 'price'));
         $highestPriceIndex = array_search($highestPrice, array_column($data['Prices'], 'price'));
+
         return [
             'price' => $highestPrice,
-            'datetime' => $data['Prices'][$highestPriceIndex]['readingDate']
+            'datetime' => $data['Prices'][$highestPriceIndex]['readingDate'],
         ];
     }
 
     public function getPricesAboveThreshold(string $startDate, string $endDate, float $threshold, ?bool $vat = null): array
     {
         $data = $this->energyPrices($startDate, $endDate, 4, $vat);
+
         return array_filter($data['Prices'], function ($price) use ($threshold) {
             return $price['price'] > $threshold;
         });
@@ -107,6 +111,7 @@ class EnergyZero
     public function getPricesBelowThreshold(string $startDate, string $endDate, float $threshold, ?bool $vat = null): array
     {
         $data = $this->energyPrices($startDate, $endDate, 4, $vat);
+
         return array_filter($data['Prices'], function ($price) use ($threshold) {
             return $price['price'] < $threshold;
         });
@@ -119,6 +124,7 @@ class EnergyZero
         usort($prices, function ($a, $b) {
             return $b['price'] <=> $a['price'];
         });
+
         return array_slice($prices, 0, $topN);
     }
 
@@ -129,6 +135,7 @@ class EnergyZero
         usort($prices, function ($a, $b) {
             return $a['price'] <=> $b['price'];
         });
+
         return array_slice($prices, 0, $topN);
     }
 }
