@@ -2,6 +2,7 @@
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/baspa/energyzero-php-api.svg?style=flat-square)](https://packagist.org/packages/baspa/energyzero-php-api)
 [![Tests](https://img.shields.io/github/actions/workflow/status/baspa/energyzero-php-api/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/baspa/energyzero-php-api/actions/workflows/run-tests.yml)
+[![PHPStan](https://img.shields.io/github/actions/workflow/status/baspa/energyzero-php-api/phpstan.yml?branch=main&label=phpstan&style=flat-square)](https://github.com/baspa/energyzero-php-api/actions/workflows/phpstan.yml)
 [![Total Downloads](https://img.shields.io/packagist/dt/baspa/energyzero-php-api.svg?style=flat-square)](https://packagist.org/packages/baspa/energyzero-php-api)
 
 This PHP package provides a client for fetching dynamic energy prices from the EnergyZero API. It allows you to retrieve energy prices for a specified date range with customizable intervals and VAT options.
