@@ -3,8 +3,8 @@
 namespace Baspa\EnergyZero;
 
 use DateTime;
-use Exception;
 use DateTimeZone;
+use Exception;
 use GuzzleHttp\Client;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\RequestException;
@@ -12,11 +12,14 @@ use GuzzleHttp\Exception\RequestException;
 class EnergyZero
 {
     private bool $vat = true;
+
     private int $requestTimeout = 10;
+
     private string $baseUri = 'https://api.energyzero.nl/v1/';
+
     private ClientInterface $client;
 
-    public function __construct(ClientInterface $client = null)
+    public function __construct(?ClientInterface $client = null)
     {
         $this->client = $client ?? new Client([
             'base_uri' => $this->baseUri,
@@ -42,10 +45,11 @@ class EnergyZero
             if ($response->getStatusCode() === 200) {
                 return json_decode($response->getBody()->getContents(), true);
             } else {
-                throw new Exception('Unexpected response status: ' . $response->getStatusCode());
+                throw new Exception('Unexpected response status: '.$response->getStatusCode());
             }
         } catch (RequestException $e) {
-            error_log('Error: ' . $e->getMessage());
+            error_log('Error: '.$e->getMessage());
+
             return null;
         }
     }
