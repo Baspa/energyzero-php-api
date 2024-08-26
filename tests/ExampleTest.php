@@ -7,7 +7,7 @@ use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Response;
 
 beforeEach(function () {
-    $this->mockHandler = new MockHandler();
+    $this->mockHandler = new MockHandler;
     $handlerStack = HandlerStack::create($this->mockHandler);
     $client = new Client(['handler' => $handlerStack]);
     $this->energyZero = new EnergyZero($client);
