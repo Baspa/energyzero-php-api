@@ -65,4 +65,68 @@ class EnergyZero
 
         return $data;
     }
+
+    public function getAveragePriceForPeriod(string $startDate, string $endDate, ?bool $vat = null): float
+    {
+        $data = $this->energyPrices($startDate, $endDate, 4, $vat);
+        return $data['average'];
+    }
+
+    public function getLowestPriceForPeriod(string $startDate, string $endDate, ?bool $vat = null): array
+    {
+        $data = $this->energyPrices($startDate, $endDate, 4, $vat);
+        $lowestPrice = min(array_column($data['Prices'], 'price'));
+        $lowestPriceIndex = array_search($lowestPrice, array_column($data['Prices'], 'price'));
+        return [
+            'price' => $lowestPrice,
+            'datetime' => $data['Prices'][$lowestPriceIndex]['readingDate']
+        ];
+    }
+
+    public function getHighestPriceForPeriod(string $startDate, string $endDate, ?bool $vat = null): array
+    {
+        $data = $this->energyPrices($startDate, $endDate, 4, $vat);
+        $highestPrice = max(array_column($data['Prices'], 'price'));
+        $highestPriceIndex = array_search($highestPrice, array_column($data['Prices'], 'price'));
+        return [
+            'price' => $highestPrice,
+            'datetime' => $data['Prices'][$highestPriceIndex]['readingDate']
+        ];
+    }
+
+    public function getPricesAboveThreshold(string $startDate, string $endDate, float $threshold, ?bool $vat = null): array
+    {
+        $data = $this->energyPrices($startDate, $endDate, 4, $vat);
+        return array_filter($data['Prices'], function ($price) use ($threshold) {
+            return $price['price'] > $threshold;
+        });
+    }
+
+    public function getPricesBelowThreshold(string $startDate, string $endDate, float $threshold, ?bool $vat = null): array
+    {
+        $data = $this->energyPrices($startDate, $endDate, 4, $vat);
+        return array_filter($data['Prices'], function ($price) use ($threshold) {
+            return $price['price'] < $threshold;
+        });
+    }
+
+    public function getPeakHours(string $startDate, string $endDate, int $topN = 5, ?bool $vat = null): array
+    {
+        $data = $this->energyPrices($startDate, $endDate, 4, $vat);
+        $prices = $data['Prices'];
+        usort($prices, function ($a, $b) {
+            return $b['price'] <=> $a['price'];
+        });
+        return array_slice($prices, 0, $topN);
+    }
+
+    public function getValleyHours(string $startDate, string $endDate, int $topN = 5, ?bool $vat = null): array
+    {
+        $data = $this->energyPrices($startDate, $endDate, 4, $vat);
+        $prices = $data['Prices'];
+        usort($prices, function ($a, $b) {
+            return $a['price'] <=> $b['price'];
+        });
+        return array_slice($prices, 0, $topN);
+    }
 }

@@ -16,6 +16,8 @@ composer require baspa/energyzero-php-api
 
 ## Usage
 
+You can fetch the energy prices for a specific date range with a specific interval and VAT option. When the VAT option is not provided, it will default to `true`. Make sure you provide a date in the format `Y-m-d`.
+
 ```php
 use Baspa\EnergyZero;
 
@@ -23,6 +25,76 @@ $prices = (new EnergyZero())->energyPrices(
     startDate: '2024-01-01',
     endDate: '2024-01-02',
     interval: 4,
+    vat: true
+);
+```
+
+The response will be an array of prices for the specified date range and also include the average price for the period.
+
+### Get the lowest price for a period
+
+```php
+$lowestPrice = (new EnergyZero())->getLowestPriceForPeriod(
+    startDate: '2024-01-01',
+    endDate: '2024-01-02',
+    vat: true
+);
+```
+
+### Get the highest price for a period
+
+```php
+$highestPrice = (new EnergyZero())->getHighestPriceForPeriod(
+    startDate: '2024-01-01',
+    endDate: '2024-01-02',
+    vat: true
+);
+```
+
+### Get the prices above a threshold
+
+```php
+$prices = (new EnergyZero())->getPricesAboveThreshold(
+    startDate: '2024-01-01',
+    endDate: '2024-01-02',
+    threshold: 0.05,
+    vat: true
+);
+```
+
+### Get the prices below a threshold
+
+```php
+$prices = (new EnergyZero())->getPricesBelowThreshold(
+    startDate: '2024-01-01',
+    endDate: '2024-01-02',
+    threshold: 0.05,
+    vat: true
+);
+```
+
+### Get the peak hours
+
+Get the top N peak hours for a period.
+
+```php
+$peakHours = (new EnergyZero())->getPeakHours(
+    startDate: '2024-01-01',
+    endDate: '2024-01-02',
+    topN: 5,
+    vat: true
+);
+```
+
+### Get the valley hours
+
+Get the top N valley hours for a period.
+
+```php
+$valleyHours = (new EnergyZero())->getValleyHours(
+    startDate: '2024-01-01',
+    endDate: '2024-01-02',
+    topN: 5,
     vat: true
 );
 ```
