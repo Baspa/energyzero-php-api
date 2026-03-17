@@ -214,8 +214,14 @@ class EnergyZero
     ): array {
         $intervalValue = $this->resolveIntervalValue($interval);
         $data = $this->energyPrices($startDate, $endDate, $intervalValue, $vat, $energyType);
-        $lowestPrice = min(array_column($data['Prices'], 'price'));
-        $lowestPriceIndex = array_search($lowestPrice, array_column($data['Prices'], 'price'));
+        $prices = array_column($data['Prices'], 'price');
+
+        if ($prices === []) {
+            throw new Exception('No prices available for this period.');
+        }
+
+        $lowestPrice = min($prices);
+        $lowestPriceIndex = array_search($lowestPrice, $prices);
 
         return [
             'price' => $lowestPrice,
@@ -237,8 +243,14 @@ class EnergyZero
     ): array {
         $intervalValue = $this->resolveIntervalValue($interval);
         $data = $this->energyPrices($startDate, $endDate, $intervalValue, $vat, $energyType);
-        $highestPrice = max(array_column($data['Prices'], 'price'));
-        $highestPriceIndex = array_search($highestPrice, array_column($data['Prices'], 'price'));
+        $prices = array_column($data['Prices'], 'price');
+
+        if ($prices === []) {
+            throw new Exception('No prices available for this period.');
+        }
+
+        $highestPrice = max($prices);
+        $highestPriceIndex = array_search($highestPrice, $prices);
 
         return [
             'price' => $highestPrice,
