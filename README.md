@@ -20,17 +20,122 @@ composer require baspa/energyzero-php-api
 You can fetch the energy prices for a specific date range with a specific interval and VAT option. When the VAT option is not provided, it will default to `true`. Make sure you provide a date in the format `Y-m-d`.
 
 ```php
-use Baspa\EnergyZero;
+use Baspa\EnergyZero\EnergyZero;
+use Baspa\EnergyZero\Enums\Interval;
 
 $prices = (new EnergyZero())->energyPrices(
     startDate: '2024-01-01',
     endDate: '2024-01-02',
-    interval: 4,
+    interval: Interval::HOUR,
     vat: true
 );
 ```
 
 The response will be an array of prices for the specified date range and also include the average price for the period.
+
+### Interval options
+
+The following interval options are available:
+
+| Interval | Enum | Value | Description |
+|----------|------|-------|-------------|
+| Quarter | `Interval::QUARTER` | 3 | 15-minute intervals |
+| Hour | `Interval::HOUR` | 4 | Hourly intervals (default) |
+| Day | `Interval::DAY` | 5 | Daily intervals |
+| Week | `Interval::WEEK` | 6 | Weekly intervals |
+| Month | `Interval::MONTH` | 7 | Monthly intervals |
+| Year | `Interval::YEAR` | 8 | Yearly intervals |
+
+You can also use integer values directly for backward compatibility:
+
+```php
+$prices = (new EnergyZero())->energyPrices('2024-01-01', '2024-01-02', 4);
+```
+
+### Set default interval
+
+You can set a default interval that will be used for all requests:
+
+```php
+use Baspa\EnergyZero\EnergyZero;
+use Baspa\EnergyZero\Enums\Interval;
+
+$energyZero = (new EnergyZero())->setDefaultInterval(Interval::QUARTER);
+
+// All subsequent calls will use 15-minute intervals by default
+$prices = $energyZero->energyPrices('2024-01-01', '2024-01-02');
+```
+
+### Get quarter-hour prices
+
+Fetch prices in 15-minute intervals for more granular data:
+
+```php
+use Baspa\EnergyZero\EnergyZero;
+use Baspa\EnergyZero\Enums\Interval;
+
+$prices = (new EnergyZero())->energyPrices(
+    startDate: '2024-01-01',
+    endDate: '2024-01-01',
+    interval: Interval::QUARTER
+);
+```
+
+### Get gas prices
+
+Fetch gas prices instead of electricity prices:
+
+```php
+use Baspa\EnergyZero\EnergyZero;
+
+$gasPrices = (new EnergyZero())->gasPrices(
+    startDate: '2024-01-01',
+    endDate: '2024-01-02',
+    vat: true
+);
+```
+
+Or set the default energy type:
+
+```php
+use Baspa\EnergyZero\EnergyZero;
+use Baspa\EnergyZero\Enums\EnergyType;
+
+$energyZero = (new EnergyZero())->setDefaultEnergyType(EnergyType::GAS);
+
+$prices = $energyZero->energyPrices('2024-01-01', '2024-01-02');
+```
+
+### Get the current price
+
+Get the current electricity price for the current hour:
+
+```php
+$currentPrice = (new EnergyZero())->getCurrentPrice();
+// Returns: ['price' => 0.25, 'datetime' => '2024-01-01T14:00:00']
+```
+
+### Get prices for specific hours
+
+Get prices for specific hours of a day:
+
+```php
+$prices = (new EnergyZero())->getPricesForHours(
+    date: '2024-01-01',
+    hours: [8, 12, 18, 22]
+);
+```
+
+### Get the average price for a period
+
+```php
+$averagePrice = (new EnergyZero())->getAveragePriceForPeriod(
+    startDate: '2024-01-01',
+    endDate: '2024-01-02',
+    interval: Interval::HOUR,
+    vat: true
+);
+```
 
 ### Get the lowest price for a period
 
@@ -38,6 +143,7 @@ The response will be an array of prices for the specified date range and also in
 $lowestPrice = (new EnergyZero())->getLowestPriceForPeriod(
     startDate: '2024-01-01',
     endDate: '2024-01-02',
+    interval: Interval::HOUR,
     vat: true
 );
 ```
@@ -48,6 +154,7 @@ $lowestPrice = (new EnergyZero())->getLowestPriceForPeriod(
 $highestPrice = (new EnergyZero())->getHighestPriceForPeriod(
     startDate: '2024-01-01',
     endDate: '2024-01-02',
+    interval: Interval::HOUR,
     vat: true
 );
 ```
@@ -59,6 +166,7 @@ $prices = (new EnergyZero())->getPricesAboveThreshold(
     startDate: '2024-01-01',
     endDate: '2024-01-02',
     threshold: 0.05,
+    interval: Interval::HOUR,
     vat: true
 );
 ```
@@ -70,6 +178,7 @@ $prices = (new EnergyZero())->getPricesBelowThreshold(
     startDate: '2024-01-01',
     endDate: '2024-01-02',
     threshold: 0.05,
+    interval: Interval::HOUR,
     vat: true
 );
 ```
@@ -83,6 +192,7 @@ $peakHours = (new EnergyZero())->getPeakHours(
     startDate: '2024-01-01',
     endDate: '2024-01-02',
     topN: 5,
+    interval: Interval::HOUR,
     vat: true
 );
 ```
@@ -96,6 +206,7 @@ $valleyHours = (new EnergyZero())->getValleyHours(
     startDate: '2024-01-01',
     endDate: '2024-01-02',
     topN: 5,
+    interval: Interval::HOUR,
     vat: true
 );
 ```
