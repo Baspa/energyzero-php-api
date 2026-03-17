@@ -15,13 +15,13 @@
         }
     ],
     "require": {
-        "php": "^8.1",
+        "php": "^8.2",
         "guzzlehttp/guzzle": "^7.9"
     },
     "require-dev": {
-        "pestphp/pest": "^2.0",
         "laravel/pint": "^1.2",
-        "phpstan/phpstan": "^1.11"
+        "pestphp/pest": "^3.0",
+        "phpstan/phpstan": "^2.0"
     },
     "autoload": {
         "psr-4": {
