@@ -7,6 +7,15 @@
 
 This PHP package provides a client for fetching dynamic energy prices from the [EnergyZero](https://www.energyzero.nl/) API. It allows you to retrieve energy prices for a specified date range with customizable intervals and VAT options.
 
+> **Building your own client?** See [API.md](API.md) for detailed API documentation with examples in multiple languages.
+
+## Price Availability
+
+| Energy Type | Today's Prices | Tomorrow's Prices |
+|-------------|----------------|-------------------|
+| Electricity | Available from 00:00 | Published around **14:00 UTC** (15:00 CET / 16:00 CEST) |
+| Gas | Available from 06:00 CET | Published around **05:00 UTC** (06:00 CET / 07:00 CEST) |
+
 ## Installation
 
 You can install the package via composer:
@@ -216,6 +225,14 @@ $valleyHours = (new EnergyZero())->getValleyHours(
 ```bash
 composer test
 ```
+
+## API Documentation
+
+For developers who want to build their own client in another programming language, see [API.md](API.md) for:
+- Complete API endpoint documentation
+- Query parameters and response format
+- Code examples in Python, JavaScript, and cURL
+- Information about price availability times
 
 ## Changelog
 
