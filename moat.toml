@@ -1,0 +1,6 @@
+# The dependabot-auto-merge, fix-php-code-style-issues and update-changelog
+# workflows need a scoped write token to auto-merge / auto-commit. Write is
+# already least-privilege (job-level only) and every action is SHA-pinned,
+# so this check is intentionally disabled for this repo.
+[checks]
+repositories_workflow_permissions_are_restricted = "off"
