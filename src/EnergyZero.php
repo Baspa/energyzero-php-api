@@ -211,29 +211,21 @@ class EnergyZero
     public function getCurrentPrice(PriceType|bool|null $priceType = null, EnergyType|int|null $energyType = null): array
     {
         $energyType = $this->resolveEnergyType($energyType);
-        $now = $this->clock->now();
-        $today = $now->setTimezone($this->timezone);
+        $interval = $this->resolveInterval(null, $energyType);
+        $priceType = $this->resolvePriceType($priceType);
+        $now = $this->clock->now()->getTimestamp();
 
-        $prices = $this->energyPrices(
-            $today->modify('-1 day')->format('Y-m-d'),
-            $today->format('Y-m-d'),
-            $this->hourOrDay($energyType),
-            $priceType,
-            $energyType,
-        )['Prices'];
-        $current = null;
+        foreach ([$now, $now - 86400] as $moment) {
+            $date = $this->apiDate(new DateTimeImmutable('@'.$moment));
 
-        foreach ($prices as $price) {
-            if (new DateTimeImmutable($price['readingDate']) <= $now) {
-                $current = $price;
+            foreach ($this->pricesForApiDate($date, $interval, $priceType, $energyType)['prices'] as $start => $price) {
+                if ($start <= $now && $now < $this->slotEnd($start, $interval)) {
+                    return $this->priceAt($price);
+                }
             }
         }
 
-        if ($current === null) {
-            throw new NoPricesException('Could not find current price.');
-        }
-
-        return $this->priceAt($current);
+        throw new NoPricesException('Could not find current price.');
     }
 
     /**
@@ -490,9 +482,13 @@ class EnergyZero
         return ['price' => $price['price'], 'datetime' => $price['readingDate']];
     }
 
-    private function hourOrDay(EnergyType $energyType): Interval
+    private function slotEnd(int $start, Interval $interval): int
     {
-        return $energyType === EnergyType::GAS ? Interval::DAY : Interval::HOUR;
+        return match ($interval) {
+            Interval::QUARTER => $start + 900,
+            Interval::HOUR => $start + 3600,
+            Interval::DAY => (new DateTimeImmutable('@'.$start))->setTimezone($this->apiTimezone)->modify('+1 day')->getTimestamp(),
+        };
     }
 
     private function httpError(ResponseInterface $response, ?Throwable $previous = null): ApiException|NoPricesException
@@ -502,7 +498,7 @@ class EnergyZero
         $message = is_array($error) && is_string($error['message'] ?? null) ? $error['message'] : null;
 
         if ($status === 404 && is_array($error) && ($error['code'] ?? null) === self::GRPC_NOT_FOUND) {
-            return new NoPricesException("EnergyZero API has no prices: {$message}", $status, $previous);
+            return new NoPricesException('EnergyZero API has no prices'.($message === null ? '.' : ": {$message}"), $status, $previous);
         }
 
         return new ApiException(

@@ -175,6 +175,28 @@ it('returns the current electricity price', function () {
         ->and(sentQuery($this->history))->interval->toBe('INTERVAL_HOUR');
 });
 
+it('does not return a slot that has already ended as the current price', function () {
+    $energyZero = new EnergyZero(
+        fakeApi([
+            '13-11-2026' => noPrices(),
+            '12-11-2026' => hourlyResponse('2026-11-10T23:00:00Z', 48),
+        ], $this->history),
+        new FixedClock('2026-11-13T09:35:00Z'),
+    );
+
+    expect(fn () => $energyZero->getCurrentPrice())->toThrow(NoPricesException::class, 'Could not find current price.');
+});
+
+it('returns the current quarter-hour after setDefaultInterval(Interval::QUARTER)', function () {
+    $energyZero = (new EnergyZero(
+        fakeApi(['13-11-2026' => recorded('electricity-quarter-13-11-2026')], $this->history),
+        new FixedClock('2026-11-13T10:40:00Z'),
+    ))->setDefaultInterval(Interval::QUARTER);
+
+    expect($energyZero->getCurrentPrice()['datetime'])->toBe('2026-11-13T10:30:00Z')
+        ->and(sentQuery($this->history))->interval->toBe('INTERVAL_QUARTER');
+});
+
 it('returns the gas day that started yesterday before 06:00 Dutch time', function () {
     $energyZero = new EnergyZero(
         fakeApi(['13-11-2026' => recorded('gas-day-13-11-2026')], $this->history),

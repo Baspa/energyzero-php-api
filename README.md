@@ -156,7 +156,7 @@ $prices = $energyZero->energyPrices('2026-11-12', '2026-11-13');
 
 ### Get the current price
 
-Get the price of the slot that started most recently: the current hour for electricity, the current gas day for gas.
+Get the price of the slot that is running now: the current hour for electricity (or quarter-hour after `setDefaultInterval(Interval::QUARTER)`), the current gas day for gas.
 
 ```php
 $currentPrice = (new EnergyZero())->getCurrentPrice();
