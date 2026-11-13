@@ -2,8 +2,13 @@
     "name": "baspa/energyzero-php-api",
     "description": "PHP client for the dynamic prices from EnergyZero",
     "keywords": [
-        "Baspa",
-        "energyzero-php-api"
+        "energyzero",
+        "energyzero-php-api",
+        "energy-prices",
+        "dynamic-energy-prices",
+        "electricity",
+        "gas",
+        "netherlands"
     ],
     "homepage": "https://github.com/baspa/energyzero-php-api",
     "license": "MIT",
@@ -20,7 +25,7 @@
     },
     "require-dev": {
         "laravel/pint": "^1.2",
-        "pestphp/pest": "^3.0",
+        "pestphp/pest": "^3.0|^4.0",
         "phpstan/phpstan": "^2.0"
     },
     "autoload": {
@@ -36,6 +41,7 @@
     "scripts": {
         "test": "vendor/bin/pest",
         "test-coverage": "vendor/bin/pest --coverage",
+        "analyse": "vendor/bin/phpstan analyse",
         "format": "vendor/bin/pint"
     },
     "config": {
