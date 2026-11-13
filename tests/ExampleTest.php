@@ -3,6 +3,7 @@
 use Baspa\EnergyZero\EnergyZero;
 use Baspa\EnergyZero\Enums\EnergyType;
 use Baspa\EnergyZero\Enums\Interval;
+use Baspa\EnergyZero\Exceptions\ApiException;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
@@ -26,10 +27,8 @@ it('can make a request', function () {
 it('handles failed requests', function () {
     $this->mockHandler->append(new Response(500));
 
-    $result = $this->energyZero->request('test');
-
-    expect($result)->toBeNull();
-});
+    $this->energyZero->request('test');
+})->throws(ApiException::class);
 
 it('can get energy prices', function () {
     $mockData = [
