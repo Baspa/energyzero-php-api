@@ -112,6 +112,20 @@ it('sends an absolute URL when the injected client has no base_uri', function ()
         ->and($uri->getPath())->toBe('/v1/energyprices');
 });
 
+it('keeps the base_uri of an injected client', function () {
+    $history = [];
+    $mockHandler = new MockHandler([new Response(200, [], json_encode([
+        'Prices' => [['readingDate' => '2024-01-01T00:00:00Z', 'price' => 0.1]],
+    ]))]);
+    $handlerStack = HandlerStack::create($mockHandler);
+    $handlerStack->push(Middleware::history($history));
+    $energyZero = new EnergyZero(new Client(['handler' => $handlerStack, 'base_uri' => 'https://proxy.test/energyzero/']));
+
+    $energyZero->energyPrices('2024-01-01', '2024-01-01');
+
+    expect((string) $history[0]['request']->getUri()->withQuery(''))->toBe('https://proxy.test/energyzero/energyprices');
+});
+
 it('rejects an unknown integer interval before sending a request', function () {
     $this->mockHandler->append(new Response(200, [], json_encode(['Prices' => []])));
 

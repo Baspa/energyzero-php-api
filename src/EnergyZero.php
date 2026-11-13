@@ -5,10 +5,10 @@ namespace Baspa\EnergyZero;
 use Baspa\EnergyZero\Enums\EnergyType;
 use Baspa\EnergyZero\Enums\Interval;
 use Baspa\EnergyZero\Exceptions\ApiException;
+use Baspa\EnergyZero\Exceptions\EnergyZeroException;
 use Baspa\EnergyZero\Exceptions\NoPricesException;
 use DateTime;
 use DateTimeZone;
-use Exception;
 use GuzzleHttp\Client;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\GuzzleException;
@@ -65,10 +65,12 @@ class EnergyZero
      */
     public function request(string $uri, array $params = []): array
     {
-        $url = UriResolver::resolve(new Uri($this->baseUri), new Uri($uri));
+        $target = $this->client->getConfig('base_uri') === null
+            ? UriResolver::resolve(new Uri($this->baseUri), new Uri($uri))
+            : $uri;
 
         try {
-            $response = $this->client->request('GET', $url, ['query' => $params]);
+            $response = $this->client->request('GET', $target, ['query' => $params]);
         } catch (GuzzleException $e) {
             throw new ApiException('EnergyZero API request failed: '.$e->getMessage(), $e->getCode(), $e);
         }
@@ -95,7 +97,8 @@ class EnergyZero
     /**
      * @return array<string, mixed>
      *
-     * @throws Exception
+     * @throws EnergyZeroException
+     * @throws InvalidArgumentException
      */
     public function energyPrices(
         string $startDate,
@@ -146,7 +149,8 @@ class EnergyZero
     /**
      * @return array<string, mixed>
      *
-     * @throws Exception
+     * @throws EnergyZeroException
+     * @throws InvalidArgumentException
      */
     public function gasPrices(
         string $startDate,
@@ -160,7 +164,8 @@ class EnergyZero
     /**
      * @return array<string, mixed>
      *
-     * @throws Exception
+     * @throws EnergyZeroException
+     * @throws InvalidArgumentException
      */
     public function getCurrentPrice(?bool $vat = null, EnergyType|int|null $energyType = null): array
     {
@@ -187,7 +192,8 @@ class EnergyZero
      * @param  array<int>  $hours
      * @return array<int, array<string, mixed>>
      *
-     * @throws Exception
+     * @throws EnergyZeroException
+     * @throws InvalidArgumentException
      */
     public function getPricesForHours(string $date, array $hours, ?bool $vat = null, EnergyType|int|null $energyType = null): array
     {
@@ -207,7 +213,8 @@ class EnergyZero
     }
 
     /**
-     * @throws Exception
+     * @throws EnergyZeroException
+     * @throws InvalidArgumentException
      */
     public function getAveragePriceForPeriod(
         string $startDate,
@@ -216,8 +223,7 @@ class EnergyZero
         ?bool $vat = null,
         EnergyType|int|null $energyType = null
     ): float {
-        $intervalValue = $this->resolveIntervalValue($interval);
-        $data = $this->energyPrices($startDate, $endDate, $intervalValue, $vat, $energyType);
+        $data = $this->energyPrices($startDate, $endDate, $interval, $vat, $energyType);
 
         return $data['average'];
     }
@@ -225,7 +231,8 @@ class EnergyZero
     /**
      * @return array<string, mixed>
      *
-     * @throws Exception
+     * @throws EnergyZeroException
+     * @throws InvalidArgumentException
      */
     public function getLowestPriceForPeriod(
         string $startDate,
@@ -234,8 +241,7 @@ class EnergyZero
         ?bool $vat = null,
         EnergyType|int|null $energyType = null
     ): array {
-        $intervalValue = $this->resolveIntervalValue($interval);
-        $data = $this->energyPrices($startDate, $endDate, $intervalValue, $vat, $energyType);
+        $data = $this->energyPrices($startDate, $endDate, $interval, $vat, $energyType);
         $prices = array_column($data['Prices'], 'price');
 
         if ($prices === []) {
@@ -254,7 +260,8 @@ class EnergyZero
     /**
      * @return array<string, mixed>
      *
-     * @throws Exception
+     * @throws EnergyZeroException
+     * @throws InvalidArgumentException
      */
     public function getHighestPriceForPeriod(
         string $startDate,
@@ -263,8 +270,7 @@ class EnergyZero
         ?bool $vat = null,
         EnergyType|int|null $energyType = null
     ): array {
-        $intervalValue = $this->resolveIntervalValue($interval);
-        $data = $this->energyPrices($startDate, $endDate, $intervalValue, $vat, $energyType);
+        $data = $this->energyPrices($startDate, $endDate, $interval, $vat, $energyType);
         $prices = array_column($data['Prices'], 'price');
 
         if ($prices === []) {
@@ -283,7 +289,8 @@ class EnergyZero
     /**
      * @return array<int, array<string, mixed>>
      *
-     * @throws Exception
+     * @throws EnergyZeroException
+     * @throws InvalidArgumentException
      */
     public function getPricesAboveThreshold(
         string $startDate,
@@ -293,8 +300,7 @@ class EnergyZero
         ?bool $vat = null,
         EnergyType|int|null $energyType = null
     ): array {
-        $intervalValue = $this->resolveIntervalValue($interval);
-        $data = $this->energyPrices($startDate, $endDate, $intervalValue, $vat, $energyType);
+        $data = $this->energyPrices($startDate, $endDate, $interval, $vat, $energyType);
 
         return array_values(array_filter($data['Prices'], function ($price) use ($threshold) {
             return $price['price'] > $threshold;
@@ -304,7 +310,8 @@ class EnergyZero
     /**
      * @return array<int, array<string, mixed>>
      *
-     * @throws Exception
+     * @throws EnergyZeroException
+     * @throws InvalidArgumentException
      */
     public function getPricesBelowThreshold(
         string $startDate,
@@ -314,8 +321,7 @@ class EnergyZero
         ?bool $vat = null,
         EnergyType|int|null $energyType = null
     ): array {
-        $intervalValue = $this->resolveIntervalValue($interval);
-        $data = $this->energyPrices($startDate, $endDate, $intervalValue, $vat, $energyType);
+        $data = $this->energyPrices($startDate, $endDate, $interval, $vat, $energyType);
 
         return array_values(array_filter($data['Prices'], function ($price) use ($threshold) {
             return $price['price'] < $threshold;
@@ -325,7 +331,8 @@ class EnergyZero
     /**
      * @return array<int, array<string, mixed>>
      *
-     * @throws Exception
+     * @throws EnergyZeroException
+     * @throws InvalidArgumentException
      */
     public function getPeakHours(
         string $startDate,
@@ -335,8 +342,7 @@ class EnergyZero
         ?bool $vat = null,
         EnergyType|int|null $energyType = null
     ): array {
-        $intervalValue = $this->resolveIntervalValue($interval);
-        $data = $this->energyPrices($startDate, $endDate, $intervalValue, $vat, $energyType);
+        $data = $this->energyPrices($startDate, $endDate, $interval, $vat, $energyType);
         $prices = $data['Prices'];
         usort($prices, function ($a, $b) {
             return $b['price'] <=> $a['price'];
@@ -348,7 +354,8 @@ class EnergyZero
     /**
      * @return array<int, array<string, mixed>>
      *
-     * @throws Exception
+     * @throws EnergyZeroException
+     * @throws InvalidArgumentException
      */
     public function getValleyHours(
         string $startDate,
@@ -358,8 +365,7 @@ class EnergyZero
         ?bool $vat = null,
         EnergyType|int|null $energyType = null
     ): array {
-        $intervalValue = $this->resolveIntervalValue($interval);
-        $data = $this->energyPrices($startDate, $endDate, $intervalValue, $vat, $energyType);
+        $data = $this->energyPrices($startDate, $endDate, $interval, $vat, $energyType);
         $prices = $data['Prices'];
         usort($prices, function ($a, $b) {
             return $a['price'] <=> $b['price'];
