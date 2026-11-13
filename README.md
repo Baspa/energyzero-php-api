@@ -240,6 +240,30 @@ $valleyHours = (new EnergyZero())->getValleyHours(
 );
 ```
 
+## Error handling
+
+The package throws these exceptions from `Baspa\EnergyZero\Exceptions`. Both extend `EnergyZeroException`, which extends `\Exception`.
+
+| Exception | Thrown when |
+|-----------|-------------|
+| `ApiException` | The API can't be reached or times out, returns a non-2xx status, or returns invalid JSON. `getPrevious()` holds the original Guzzle or JSON exception; `getCode()` holds the HTTP status for non-2xx responses. |
+| `NoPricesException` | The API responded, but without prices for the period (for example, tomorrow's prices aren't published yet). |
+
+Invalid input throws `\InvalidArgumentException` before a request is sent: an unknown integer interval or energy type, or `Interval::QUARTER` for gas.
+
+```php
+use Baspa\EnergyZero\Exceptions\ApiException;
+use Baspa\EnergyZero\Exceptions\NoPricesException;
+
+try {
+    $prices = (new EnergyZero())->energyPrices('2024-01-01', '2024-01-02');
+} catch (NoPricesException $e) {
+    // No prices for this period (yet)
+} catch (ApiException $e) {
+    // EnergyZero is unreachable or returned an error
+}
+```
+
 ## Testing
 
 ```bash
@@ -260,7 +284,12 @@ Please see [CHANGELOG](CHANGELOG.md) for more information on what has changed re
 
 ## Contributing
 
-Please see [CONTRIBUTING](https://github.com/spatie/.github/blob/main/CONTRIBUTING.md) for details.
+Contributions are welcome:
+
+1. Fork the repository and create a branch.
+2. Make your change and add or update tests.
+3. Run `composer test` (tests must pass), `composer analyse` (PHPStan) and `composer format` (fixes code style).
+4. Open a pull request against `main`.
 
 ## Security Vulnerabilities
 
