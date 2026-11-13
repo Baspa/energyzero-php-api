@@ -172,3 +172,27 @@ it('uses the system time by default', function () {
     expect($clock)->toBeInstanceOf(ClockInterface::class);
     expect($clock->now()->getTimestamp())->toBeGreaterThanOrEqual(time() - 1)->toBeLessThanOrEqual(time() + 1);
 });
+
+it('applies the configured timezone to dates that carry their own offset', function () {
+    $this->mockHandler->append(new Response(200, [], json_encode(hourlyApiPrices('2026-11-12T23:00:00Z', 24))));
+
+    (new EnergyZero($this->client))->energyPrices('2026-11-13T10:00:00Z', '2026-11-13T10:00:00+00:00');
+
+    expect(sentQuery($this->history))
+        ->fromDate->toBe('2026-11-12T23:00:00.000Z')
+        ->tillDate->toBe('2026-11-13T22:59:59.999Z');
+});
+
+it('picks the quarter-hour slot that contains now', function () {
+    $this->mockHandler->append(new Response(200, [], json_encode(['Prices' => [
+        ['readingDate' => '2026-11-13T09:00:00Z', 'price' => 0.1],
+        ['readingDate' => '2026-11-13T09:15:00Z', 'price' => 0.2],
+        ['readingDate' => '2026-11-13T09:30:00Z', 'price' => 0.3],
+        ['readingDate' => '2026-11-13T09:45:00Z', 'price' => 0.4],
+        ['readingDate' => '2026-11-13T10:00:00Z', 'price' => 0.5],
+    ]])));
+
+    $current = (new EnergyZero($this->client, new FixedClock('2026-11-13T09:50:00Z')))->getCurrentPrice();
+
+    expect($current)->toBe(['price' => 0.4, 'datetime' => '2026-11-13T09:45:00Z']);
+});
