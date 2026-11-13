@@ -7,7 +7,13 @@ enum Interval: int
     case QUARTER = 3;
     case HOUR = 4;
     case DAY = 5;
-    case WEEK = 6;
-    case MONTH = 7;
-    case YEAR = 8;
+
+    public function apiValue(): string
+    {
+        return match ($this) {
+            self::QUARTER => 'INTERVAL_QUARTER',
+            self::HOUR => 'INTERVAL_HOUR',
+            self::DAY => 'INTERVAL_DAY',
+        };
+    }
 }

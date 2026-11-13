@@ -3,449 +3,169 @@
 use Baspa\EnergyZero\EnergyZero;
 use Baspa\EnergyZero\Enums\EnergyType;
 use Baspa\EnergyZero\Enums\Interval;
+use Baspa\EnergyZero\Enums\PriceType;
 use Baspa\EnergyZero\Exceptions\ApiException;
-use Baspa\EnergyZero\Tests\FixedClock;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Response;
 
 beforeEach(function () {
-    $this->mockHandler = new MockHandler;
-    $handlerStack = HandlerStack::create($this->mockHandler);
-    $client = new Client(['handler' => $handlerStack]);
-    $this->energyZero = new EnergyZero($client);
+    $this->history = new ArrayObject;
+    $this->energyZero = new EnergyZero(fakeApi([
+        '13-11-2026' => pricesResponse('2026-11-12T23:00:00Z', [0.25, 0.75, 0.5, 0.25]),
+    ], $this->history));
 });
 
 it('can make a request', function () {
-    $this->mockHandler->append(new Response(200, [], json_encode(['data' => 'test'])));
+    $mockHandler = new MockHandler([new Response(200, [], json_encode(['data' => 'test']))]);
+    $energyZero = new EnergyZero(new Client(['handler' => HandlerStack::create($mockHandler)]));
 
-    $result = $this->energyZero->request('test');
-
-    expect($result)->toBe(['data' => 'test']);
+    expect($energyZero->request('test'))->toBe(['data' => 'test']);
 });
 
 it('handles failed requests', function () {
-    $this->mockHandler->append(new Response(500));
+    $mockHandler = new MockHandler([new Response(500)]);
+    $energyZero = new EnergyZero(new Client(['handler' => HandlerStack::create($mockHandler)]));
 
-    $this->energyZero->request('test');
+    $energyZero->request('test');
 })->throws(ApiException::class);
 
 it('can get energy prices', function () {
-    $mockData = [
+    expect($this->energyZero->energyPrices('2026-11-13', '2026-11-13'))->toBe([
         'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-            ['readingDate' => '2023-05-01T01:00:00', 'price' => 0.2],
+            ['readingDate' => '2026-11-12T23:00:00Z', 'price' => 0.25],
+            ['readingDate' => '2026-11-13T00:00:00Z', 'price' => 0.75],
+            ['readingDate' => '2026-11-13T01:00:00Z', 'price' => 0.5],
+            ['readingDate' => '2026-11-13T02:00:00Z', 'price' => 0.25],
         ],
-        'average' => 0.15,
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero->energyPrices('2023-05-01', '2023-05-02');
-
-    expect($result)->toBe($mockData);
-});
-
-it('can get energy prices with interval enum', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-            ['readingDate' => '2023-05-01T00:15:00', 'price' => 0.12],
-            ['readingDate' => '2023-05-01T00:30:00', 'price' => 0.11],
-            ['readingDate' => '2023-05-01T00:45:00', 'price' => 0.13],
-        ],
-        'average' => 0.115,
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero->energyPrices('2023-05-01', '2023-05-01', Interval::QUARTER);
-
-    expect($result)->toBe($mockData);
-    expect(count($result['Prices']))->toBe(4);
-});
-
-it('can get energy prices with integer interval for backward compatibility', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-            ['readingDate' => '2023-05-01T00:15:00', 'price' => 0.12],
-        ],
-        'average' => 0.11,
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero->energyPrices('2023-05-01', '2023-05-01', 3);
-
-    expect($result)->toBe($mockData);
+        'average' => 0.4375,
+    ]);
 });
 
 it('can set default interval', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-        ],
-        'average' => 0.1,
-    ];
+    $this->energyZero->setDefaultInterval(Interval::QUARTER)->energyPrices('2026-11-13', '2026-11-13');
 
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero
-        ->setDefaultInterval(Interval::QUARTER)
-        ->energyPrices('2023-05-01', '2023-05-01');
-
-    expect($result)->toBe($mockData);
+    expect(sentQuery($this->history))->interval->toBe('INTERVAL_QUARTER');
 });
 
 it('can set default energy type', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.8],
-        ],
-        'average' => 0.8,
-    ];
+    $this->energyZero->setDefaultEnergyType(EnergyType::GAS)->energyPrices('2026-11-13', '2026-11-13');
 
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero
-        ->setDefaultEnergyType(EnergyType::GAS)
-        ->energyPrices('2023-05-01', '2023-05-01');
-
-    expect($result)->toBe($mockData);
-});
-
-it('can get gas prices', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.8],
-            ['readingDate' => '2023-05-01T01:00:00', 'price' => 0.85],
-        ],
-        'average' => 0.825,
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero->gasPrices('2023-05-01', '2023-05-02');
-
-    expect($result)->toBe($mockData);
-});
-
-it('can get current price', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2026-11-13T09:00:00Z', 'price' => 0.15],
-        ],
-        'average' => 0.15,
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $energyZero = new EnergyZero(
-        new Client(['handler' => HandlerStack::create($this->mockHandler)]),
-        new FixedClock('2026-11-13T09:35:00Z'),
-    );
-
-    $result = $energyZero->getCurrentPrice();
-
-    expect($result)->toBe(['price' => 0.15, 'datetime' => '2026-11-13T09:00:00Z']);
+    expect(sentQuery($this->history))
+        ->energyType->toBe('ENERGY_TYPE_GAS')
+        ->interval->toBe('INTERVAL_DAY');
 });
 
 it('can get prices for specific hours', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T06:00:00Z', 'price' => 0.1],
-            ['readingDate' => '2023-05-01T07:00:00Z', 'price' => 0.12],
-            ['readingDate' => '2023-05-01T08:00:00Z', 'price' => 0.15],
-            ['readingDate' => '2023-05-01T09:00:00Z', 'price' => 0.18],
-        ],
-        'average' => 0.1375,
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero->getPricesForHours('2023-05-01', [8, 10]);
-
-    expect($result)->toHaveCount(2);
-    expect($result[0]['price'])->toBe(0.1);
-    expect($result[1]['price'])->toBe(0.15);
+    expect($this->energyZero->getPricesForHours('2026-11-13', [1, 2]))->toBe([
+        ['readingDate' => '2026-11-13T00:00:00Z', 'price' => 0.75],
+        ['readingDate' => '2026-11-13T01:00:00Z', 'price' => 0.5],
+    ]);
 });
 
 it('can get average price for period', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-            ['readingDate' => '2023-05-01T01:00:00', 'price' => 0.2],
-        ],
-        'average' => 0.15,
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero->getAveragePriceForPeriod('2023-05-01', '2023-05-02');
-
-    expect($result)->toBe(0.15);
+    expect($this->energyZero->getAveragePriceForPeriod('2026-11-13', '2026-11-13'))->toBe(0.4375);
 });
 
-it('can get average price for period with interval', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-            ['readingDate' => '2023-05-01T00:15:00', 'price' => 0.12],
-        ],
-        'average' => 0.11,
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero->getAveragePriceForPeriod('2023-05-01', '2023-05-01', Interval::QUARTER);
-
-    expect($result)->toBe(0.11);
-});
-
-it('can get lowest price for period', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-            ['readingDate' => '2023-05-01T01:00:00', 'price' => 0.2],
-        ],
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero->getLowestPriceForPeriod('2023-05-01', '2023-05-02');
-
-    expect($result)->toBe([
-        'price' => 0.1,
-        'datetime' => '2023-05-01T00:00:00',
-    ]);
-});
-
-it('can get lowest price for period with interval', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.12],
-            ['readingDate' => '2023-05-01T00:15:00', 'price' => 0.08],
-        ],
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero->getLowestPriceForPeriod('2023-05-01', '2023-05-01', Interval::QUARTER);
-
-    expect($result)->toBe([
-        'price' => 0.08,
-        'datetime' => '2023-05-01T00:15:00',
-    ]);
+it('can get the first lowest price for period', function () {
+    expect($this->energyZero->getLowestPriceForPeriod('2026-11-13', '2026-11-13'))
+        ->toBe(['price' => 0.25, 'datetime' => '2026-11-12T23:00:00Z']);
 });
 
 it('can get highest price for period', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-            ['readingDate' => '2023-05-01T01:00:00', 'price' => 0.2],
-        ],
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero->getHighestPriceForPeriod('2023-05-01', '2023-05-02');
-
-    expect($result)->toBe([
-        'price' => 0.2,
-        'datetime' => '2023-05-01T01:00:00',
-    ]);
-});
-
-it('can get highest price for period with interval', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.12],
-            ['readingDate' => '2023-05-01T00:15:00', 'price' => 0.18],
-        ],
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero->getHighestPriceForPeriod('2023-05-01', '2023-05-01', Interval::QUARTER);
-
-    expect($result)->toBe([
-        'price' => 0.18,
-        'datetime' => '2023-05-01T00:15:00',
-    ]);
+    expect($this->energyZero->getHighestPriceForPeriod('2026-11-13', '2026-11-13'))
+        ->toBe(['price' => 0.75, 'datetime' => '2026-11-13T00:00:00Z']);
 });
 
 it('can get prices above threshold', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-            ['readingDate' => '2023-05-01T01:00:00', 'price' => 0.2],
-            ['readingDate' => '2023-05-01T02:00:00', 'price' => 0.3],
-        ],
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero->getPricesAboveThreshold('2023-05-01', '2023-05-02', 0.15);
-
-    expect($result)->toBe([
-        ['readingDate' => '2023-05-01T01:00:00', 'price' => 0.2],
-        ['readingDate' => '2023-05-01T02:00:00', 'price' => 0.3],
-    ]);
-});
-
-it('can get prices above threshold with interval', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-            ['readingDate' => '2023-05-01T00:15:00', 'price' => 0.2],
-        ],
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero->getPricesAboveThreshold('2023-05-01', '2023-05-01', 0.15, Interval::QUARTER);
-
-    expect($result)->toBe([
-        ['readingDate' => '2023-05-01T00:15:00', 'price' => 0.2],
+    expect($this->energyZero->getPricesAboveThreshold('2026-11-13', '2026-11-13', 0.3))->toBe([
+        ['readingDate' => '2026-11-13T00:00:00Z', 'price' => 0.75],
+        ['readingDate' => '2026-11-13T01:00:00Z', 'price' => 0.5],
     ]);
 });
 
 it('can get prices below threshold', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-            ['readingDate' => '2023-05-01T01:00:00', 'price' => 0.2],
-            ['readingDate' => '2023-05-01T02:00:00', 'price' => 0.3],
-        ],
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero->getPricesBelowThreshold('2023-05-01', '2023-05-02', 0.25);
-
-    expect($result)->toBe([
-        ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-        ['readingDate' => '2023-05-01T01:00:00', 'price' => 0.2],
-    ]);
-});
-
-it('can get prices below threshold with interval', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-            ['readingDate' => '2023-05-01T00:15:00', 'price' => 0.2],
-        ],
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero->getPricesBelowThreshold('2023-05-01', '2023-05-01', 0.15, Interval::QUARTER);
-
-    expect($result)->toBe([
-        ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
+    expect($this->energyZero->getPricesBelowThreshold('2026-11-13', '2026-11-13', 0.3))->toBe([
+        ['readingDate' => '2026-11-12T23:00:00Z', 'price' => 0.25],
+        ['readingDate' => '2026-11-13T02:00:00Z', 'price' => 0.25],
     ]);
 });
 
 it('can get peak hours', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-            ['readingDate' => '2023-05-01T01:00:00', 'price' => 0.3],
-            ['readingDate' => '2023-05-01T02:00:00', 'price' => 0.2],
-        ],
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero->getPeakHours('2023-05-01', '2023-05-02', 2);
-
-    expect($result)->toBe([
-        ['readingDate' => '2023-05-01T01:00:00', 'price' => 0.3],
-        ['readingDate' => '2023-05-01T02:00:00', 'price' => 0.2],
-    ]);
-});
-
-it('can get peak hours with interval', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-            ['readingDate' => '2023-05-01T00:15:00', 'price' => 0.3],
-            ['readingDate' => '2023-05-01T00:30:00', 'price' => 0.2],
-        ],
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero->getPeakHours('2023-05-01', '2023-05-01', 2, Interval::QUARTER);
-
-    expect($result)->toBe([
-        ['readingDate' => '2023-05-01T00:15:00', 'price' => 0.3],
-        ['readingDate' => '2023-05-01T00:30:00', 'price' => 0.2],
+    expect($this->energyZero->getPeakHours('2026-11-13', '2026-11-13', 2))->toBe([
+        ['readingDate' => '2026-11-13T00:00:00Z', 'price' => 0.75],
+        ['readingDate' => '2026-11-13T01:00:00Z', 'price' => 0.5],
     ]);
 });
 
 it('can get valley hours', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-            ['readingDate' => '2023-05-01T01:00:00', 'price' => 0.3],
-            ['readingDate' => '2023-05-01T02:00:00', 'price' => 0.2],
-        ],
-    ];
-
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
-
-    $result = $this->energyZero->getValleyHours('2023-05-01', '2023-05-02', 2);
-
-    expect($result)->toBe([
-        ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-        ['readingDate' => '2023-05-01T02:00:00', 'price' => 0.2],
+    expect($this->energyZero->getValleyHours('2026-11-13', '2026-11-13', 2))->toBe([
+        ['readingDate' => '2026-11-12T23:00:00Z', 'price' => 0.25],
+        ['readingDate' => '2026-11-13T02:00:00Z', 'price' => 0.25],
     ]);
 });
 
-it('can get valley hours with interval', function () {
-    $mockData = [
-        'Prices' => [
-            ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-            ['readingDate' => '2023-05-01T00:15:00', 'price' => 0.3],
-            ['readingDate' => '2023-05-01T00:30:00', 'price' => 0.2],
-        ],
-    ];
+it('passes the interval and price type through every helper', function (Closure $call, mixed $expected) {
+    $history = new ArrayObject;
+    $energyZero = new EnergyZero(fakeApi(['13-11-2026' => recorded('electricity-quarter-13-11-2026')], $history));
 
-    $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
+    expect($call($energyZero))->toBe($expected)
+        ->and(sentQuery($history))->interval->toBe('INTERVAL_QUARTER');
+})->with([
+    'lowest' => [
+        fn (EnergyZero $e) => $e->getLowestPriceForPeriod('2026-11-13', '2026-11-13', Interval::QUARTER, PriceType::ALL_IN),
+        ['price' => 0.22766, 'datetime' => '2026-11-13T03:00:00Z'],
+    ],
+    'highest' => [
+        fn (EnergyZero $e) => $e->getHighestPriceForPeriod('2026-11-13', '2026-11-13', Interval::QUARTER, PriceType::ALL_IN),
+        ['price' => 0.42071, 'datetime' => '2026-11-13T16:45:00Z'],
+    ],
+    'average' => [
+        fn (EnergyZero $e) => round($e->getAveragePriceForPeriod('2026-11-13', '2026-11-13', Interval::QUARTER, false), 12),
+        0.209379270833,
+    ],
+    'above threshold' => [
+        fn (EnergyZero $e) => count($e->getPricesAboveThreshold('2026-11-13', '2026-11-13', 0.42, Interval::QUARTER, PriceType::ALL_IN)),
+        1,
+    ],
+    'below threshold' => [
+        fn (EnergyZero $e) => count($e->getPricesBelowThreshold('2026-11-13', '2026-11-13', 0.2, 3, true)),
+        24,
+    ],
+    'peak' => [
+        fn (EnergyZero $e) => $e->getPeakHours('2026-11-13', '2026-11-13', 1, Interval::QUARTER, PriceType::ALL_IN_WITH_VAT),
+        [['readingDate' => '2026-11-13T16:45:00Z', 'price' => 0.5090591]],
+    ],
+    'valley' => [
+        fn (EnergyZero $e) => $e->getValleyHours('2026-11-13', '2026-11-13', 1, Interval::QUARTER, PriceType::MARKET),
+        [['readingDate' => '2026-11-13T03:00:00Z', 'price' => 0.13605]],
+    ],
+]);
 
-    $result = $this->energyZero->getValleyHours('2023-05-01', '2023-05-01', 2, Interval::QUARTER);
-
-    expect($result)->toBe([
-        ['readingDate' => '2023-05-01T00:00:00', 'price' => 0.1],
-        ['readingDate' => '2023-05-01T00:30:00', 'price' => 0.2],
-    ]);
-});
-
-it('returns fluent interface for setDefaultInterval', function () {
-    $result = $this->energyZero->setDefaultInterval(Interval::QUARTER);
-
-    expect($result)->toBeInstanceOf(EnergyZero::class);
-});
-
-it('returns fluent interface for setDefaultEnergyType', function () {
-    $result = $this->energyZero->setDefaultEnergyType(EnergyType::GAS);
-
-    expect($result)->toBeInstanceOf(EnergyZero::class);
+it('returns fluent interfaces for the setters', function () {
+    expect($this->energyZero->setDefaultInterval(Interval::QUARTER))->toBe($this->energyZero)
+        ->and($this->energyZero->setDefaultEnergyType(EnergyType::GAS))->toBe($this->energyZero)
+        ->and($this->energyZero->setDefaultPriceType(PriceType::ALL_IN))->toBe($this->energyZero);
 });
 
 it('interval enum has correct values', function () {
-    expect(Interval::QUARTER->value)->toBe(3);
-    expect(Interval::HOUR->value)->toBe(4);
-    expect(Interval::DAY->value)->toBe(5);
-    expect(Interval::WEEK->value)->toBe(6);
-    expect(Interval::MONTH->value)->toBe(7);
-    expect(Interval::YEAR->value)->toBe(8);
+    expect(Interval::cases())->toBe([Interval::QUARTER, Interval::HOUR, Interval::DAY])
+        ->and(Interval::QUARTER->value)->toBe(3)
+        ->and(Interval::HOUR->value)->toBe(4)
+        ->and(Interval::DAY->value)->toBe(5)
+        ->and(Interval::QUARTER->apiValue())->toBe('INTERVAL_QUARTER')
+        ->and(Interval::HOUR->apiValue())->toBe('INTERVAL_HOUR')
+        ->and(Interval::DAY->apiValue())->toBe('INTERVAL_DAY');
 });
 
 it('energy type enum has correct values', function () {
-    expect(EnergyType::ELECTRICITY->value)->toBe(1);
-    expect(EnergyType::GAS->value)->toBe(3);
+    expect(EnergyType::ELECTRICITY->value)->toBe(1)
+        ->and(EnergyType::GAS->value)->toBe(3)
+        ->and(EnergyType::ELECTRICITY->apiValue())->toBe('ENERGY_TYPE_ELECTRICITY')
+        ->and(EnergyType::GAS->apiValue())->toBe('ENERGY_TYPE_GAS');
+});
+
+it('price type enum values are the response keys', function () {
+    expect(array_column(PriceType::cases(), 'value'))->toBe(['base', 'base_with_vat', 'all_in', 'all_in_with_vat']);
 });

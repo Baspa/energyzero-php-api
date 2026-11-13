@@ -9,104 +9,41 @@ The EnergyZero API provides dynamic energy prices for electricity and gas in the
 ## Base URL
 
 ```
-https://api.energyzero.nl/v1/
+https://public.api.energyzero.nl/public/v1/
 ```
 
 ## Endpoints
 
-### GET /energyprices
+### GET /prices
 
-Retrieves energy prices for a specified date range.
+Retrieves the prices around one Dutch day.
 
 #### Query Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `fromDate` | string | Yes | Start date/time in ISO 8601 UTC format: `YYYY-MM-DDTHH:mm:ss.sssZ` |
-| `tillDate` | string | Yes | End date/time in ISO 8601 UTC format: `YYYY-MM-DDTHH:mm:ss.sssZ` |
-| `interval` | integer | Yes | Time interval for price data (see table below) |
-| `usageType` | integer | Yes | Type of energy: `1` = electricity, `3` = gas |
-| `inclBtw` | string | No | Include VAT: `true` or `false` (default: `true`) |
+| `energyType` | string | Yes | `ENERGY_TYPE_ELECTRICITY` or `ENERGY_TYPE_GAS` |
+| `date` | string | Yes | One day in Dutch time, formatted `dd-mm-YYYY` (for example `13-11-2026`) |
+| `interval` | string | Yes | `INTERVAL_QUARTER`, `INTERVAL_HOUR` or `INTERVAL_DAY` (see below) |
 
-#### Interval Values
+#### Intervals
 
-| Value | Interval | Description |
-|-------|----------|-------------|
-| `3` | Quarter | 15-minute intervals (electricity only) |
-| `4` | Hour | Hourly intervals |
-| `5` | Day | Daily intervals |
-| `6` | Week | Weekly intervals |
-| `7` | Month | Monthly intervals |
-| `8` | Year | Yearly intervals |
+| Interval | Electricity | Gas |
+|----------|-------------|-----|
+| `INTERVAL_QUARTER` | 15-minute prices | Not available |
+| `INTERVAL_HOUR` | Hourly prices (the mean of the four quarters) | Not available |
+| `INTERVAL_DAY` | Not available | One price per gas day (06:00 to 06:00 Dutch time) |
 
-> **Note:** Quarter-hour intervals (`3`) are only available for electricity, not for gas.
+An interval that isn't available returns `400 Bad Request`.
 
-## Price Availability
+#### What a date returns
 
-### Electricity Prices
-- **Today's prices:** Available from 00:00
-- **Tomorrow's prices:** Published around **14:00 UTC** (15:00 CET / 16:00 CEST)
-- Prices change every hour (or every 15 minutes for quarter-hour data)
+A response covers more than the requested day:
 
-### Gas Prices
-- **Today's prices:** Available from 06:00 CET
-- **Tomorrow's prices:** Published around **05:00 UTC** (06:00 CET / 07:00 CEST)
-- Prices are fixed for the entire day
+- **Electricity:** the requested Dutch day and the day before it, plus the day after it once that day is published (so always for dates in the past). `date=13-11-2026` returned the range `2026-11-11T23:00:00Z` to `2026-11-13T23:00:00Z` (12 and 13 November in Dutch time).
+- **Gas:** the gas day that starts on the requested date and the one before it, plus the one after it once that is published. `date=13-11-2026` returned the gas days starting at `2026-11-12T05:00:00Z` and `2026-11-13T05:00:00Z`.
 
-## Example Requests
-
-### Electricity prices for today (hourly)
-
-```bash
-# Replace dates with actual values
-curl "https://api.energyzero.nl/v1/energyprices?fromDate=2024-01-15T23:00:00.000Z&tillDate=2024-01-16T22:59:59.999Z&interval=4&usageType=1&inclBtw=true"
-```
-
-### Electricity prices for today (quarter-hour)
-
-```bash
-curl "https://api.energyzero.nl/v1/energyprices?fromDate=2024-01-15T23:00:00.000Z&tillDate=2024-01-16T22:59:59.999Z&interval=3&usageType=1&inclBtw=true"
-```
-
-### Gas prices for today
-
-```bash
-curl "https://api.energyzero.nl/v1/energyprices?fromDate=2024-01-15T23:00:00.000Z&tillDate=2024-01-16T22:59:59.999Z&interval=4&usageType=3&inclBtw=true"
-```
-
-### Electricity prices for tomorrow (after 14:00 UTC)
-
-```bash
-curl "https://api.energyzero.nl/v1/energyprices?fromDate=2024-01-16T23:00:00.000Z&tillDate=2024-01-17T22:59:59.999Z&interval=3&usageType=1&inclBtw=true"
-```
-
-## Date/Time Handling
-
-The API expects dates in **UTC timezone**. When requesting prices for a specific day in local time (CET/CEST), you need to convert accordingly:
-
-### For CET (Winter: UTC+1)
-- Local day `2024-01-15` = UTC `2024-01-14T23:00:00.000Z` to `2024-01-15T22:59:59.999Z`
-
-### For CEST (Summer: UTC+2)
-- Local day `2024-07-15` = UTC `2024-07-14T22:00:00.000Z` to `2024-07-15T21:59:59.999Z`
-
-### Example: Get today's prices in PHP
-
-```php
-$localTz = new DateTimeZone('Europe/Amsterdam');
-$utcTz = new DateTimeZone('UTC');
-
-$startDate = new DateTime('today', $localTz);
-$startDate->setTime(0, 0, 0);
-$startDate->setTimezone($utcTz);
-
-$endDate = new DateTime('today', $localTz);
-$endDate->setTime(23, 59, 59);
-$endDate->setTimezone($utcTz);
-
-$fromDate = $startDate->format('Y-m-d\TH:i:s.000\Z');
-$tillDate = $endDate->format('Y-m-d\TH:i:s.999\Z');
-```
+The `range` field tells you which period the response covers. Filter the entries yourself if you only want the requested day. To fetch a longer period, request every other day: each response also covers the day before it.
 
 ## Response Format
 
@@ -114,41 +51,117 @@ $tillDate = $endDate->format('Y-m-d\TH:i:s.999\Z');
 
 ```json
 {
-  "Prices": [
+  "interval": "RESPONSE_INTERVAL_QUARTER",
+  "range": {
+    "start": "2026-11-11T23:00:00Z",
+    "end": "2026-11-13T23:00:00Z"
+  },
+  "base": [
     {
-      "readingDate": "2024-01-15T23:00:00Z",
-      "price": 0.08234
-    },
-    {
-      "readingDate": "2024-01-16T00:00:00Z",
-      "price": 0.07856
+      "start": "2026-11-11T23:00:00Z",
+      "end": "2026-11-11T23:15:00Z",
+      "price": { "value": "0.2249" }
     }
   ],
-  "average": 0.08045,
-  "fromDate": "2024-01-15T23:00:00Z",
-  "tillDate": "2024-01-16T22:59:59Z",
-  "intervalType": 4
+  "base_with_vat": [
+    {
+      "start": "2026-11-11T23:00:00Z",
+      "end": "2026-11-11T23:15:00Z",
+      "price": { "value": "0.272129" }
+    }
+  ],
+  "all_in": [
+    {
+      "start": "2026-11-11T23:00:00Z",
+      "end": "2026-11-11T23:15:00Z",
+      "price": { "value": "0.31651" }
+    }
+  ],
+  "all_in_with_vat": [
+    {
+      "start": "2026-11-11T23:00:00Z",
+      "end": "2026-11-11T23:15:00Z",
+      "price": { "value": "0.3829771" }
+    }
+  ]
 }
 ```
+
+The lists are shortened here; a quarter-hour response for two days holds 192 entries per list.
 
 ### Response Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `Prices` | array | Array of price objects |
-| `Prices[].readingDate` | string | Timestamp for this price period (UTC) |
-| `Prices[].price` | float | Price in EUR per kWh (electricity) or EUR per m³ (gas) |
-| `average` | float | Average price for the requested period |
-| `fromDate` | string | Start of the requested period |
-| `tillDate` | string | End of the requested period |
-| `intervalType` | integer | The interval type used |
+| `interval` | string | `RESPONSE_INTERVAL_QUARTER`, `RESPONSE_INTERVAL_HOUR` or `RESPONSE_INTERVAL_DAY` |
+| `range.start`, `range.end` | string | The period the response covers (UTC) |
+| `base` | array | Market prices without VAT |
+| `base_with_vat` | array | Market prices with 21% VAT |
+| `all_in` | array | All-in prices (market price plus energy tax and surcharges, as EnergyZero calculates them) without VAT |
+| `all_in_with_vat` | array | All-in prices with 21% VAT |
+| `[].start`, `[].end` | string | Start and end of the slot (UTC) |
+| `[].price.value` | string | Price in EUR per kWh (electricity) or EUR per m³ (gas). It's a **string**; convert it to a number yourself. |
+
+The four lists have the same slots in chronological order. There is no `average` field; calculate it yourself if you need it.
 
 ### Error Responses
 
-The API returns empty `Prices` array when:
-- Requesting future prices before they're published
-- Invalid date range
-- Invalid parameters
+Errors return a JSON body with a numeric `code` and a `message`:
+
+```json
+{
+  "code": 3,
+  "message": "invalid interval type for electricity: daily",
+  "details": []
+}
+```
+
+| Status | `code` | When | Example `message` |
+|--------|--------|------|-------------------|
+| `400 Bad Request` | `3` | A parameter is missing or invalid | `invalid interval type for electricity: daily`, `interval is required`, `invalid DailyEnergyPricesRequest.Date: value does not match regex pattern "^\\d{2}-\\d{2}-\\d{4}$"` |
+| `404 Not Found` | `5` | There are no prices for the date (yet) | `prices do not span the whole requested date`, `no prices found for the given date` |
+
+Asking for tomorrow before its prices are published returns `404`.
+
+## Price Availability
+
+### Electricity Prices
+- Prices per quarter-hour or hour, per Dutch day (00:00 to 24:00)
+- **Tomorrow's prices:** Published around **14:00 UTC** (15:00 CET / 16:00 CEST)
+
+### Gas Prices
+- One price per gas day, from 06:00 to 06:00 Dutch time
+- **A gas day's price:** Published around **05:00 UTC** (06:00 CET / 07:00 CEST), when the gas day starts. Before 06:00 Dutch time, the current gas price is the one for the gas day that started the previous morning.
+
+## Date/Time Handling
+
+The `date` parameter is a day in Dutch time (`Europe/Amsterdam`); the timestamps in the response are in UTC:
+
+- Winter (CET, UTC+1): Dutch day `13-11-2026` runs from `2026-11-12T23:00:00Z` to `2026-11-13T23:00:00Z`
+- Summer (CEST, UTC+2): Dutch day `15-07-2026` runs from `2026-07-14T22:00:00Z` to `2026-07-15T22:00:00Z`
+
+The day the clocks go back has 25 hours (100 quarters), the day they go forward 23 (92 quarters).
+
+### Example: Get today's prices in PHP
+
+```php
+$tz = new DateTimeZone('Europe/Amsterdam');
+$dayStart = new DateTimeImmutable('today', $tz);
+$dayEnd = $dayStart->modify('+1 day');
+
+$query = http_build_query([
+    'energyType' => 'ENERGY_TYPE_ELECTRICITY',
+    'date' => $dayStart->format('d-m-Y'),
+    'interval' => 'INTERVAL_QUARTER',
+]);
+$data = json_decode(file_get_contents("https://public.api.energyzero.nl/public/v1/prices?{$query}"), true);
+
+$today = array_filter($data['base_with_vat'], function (array $entry) use ($dayStart, $dayEnd) {
+    $start = new DateTimeImmutable($entry['start']);
+
+    return $start >= $dayStart && $start < $dayEnd;
+});
+```
 
 ## Rate Limiting
 
@@ -162,81 +175,111 @@ The API does not appear to have strict rate limiting, but it's recommended to:
 ### Python
 
 ```python
-import requests
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
-def get_electricity_prices(date, interval=4, vat=True):
+import requests
+
+AMSTERDAM = ZoneInfo("Europe/Amsterdam")
+
+
+def get_electricity_prices(day, interval="INTERVAL_QUARTER", price_type="base_with_vat"):
     """
-    Get electricity prices for a specific date.
+    Get electricity prices for one Dutch day.
 
     Args:
-        date: Date string in YYYY-MM-DD format (local time)
-        interval: 3 for quarter-hour, 4 for hourly
-        vat: Include VAT in prices
+        day: a date in Dutch time
+        interval: "INTERVAL_QUARTER" or "INTERVAL_HOUR"
+        price_type: "base", "base_with_vat", "all_in" or "all_in_with_vat"
     """
-    # Convert local date to UTC range
-    # Note: Adjust for your timezone
-    from_date = f"{date}T23:00:00.000Z"  # Previous day 23:00 UTC for CET
-    till_date = f"{date}T22:59:59.999Z"   # Same day 22:59 UTC for CET
+    response = requests.get(
+        "https://public.api.energyzero.nl/public/v1/prices",
+        params={
+            "energyType": "ENERGY_TYPE_ELECTRICITY",
+            "date": day.strftime("%d-%m-%Y"),
+            "interval": interval,
+        },
+    )
+    if response.status_code == 404:
+        return []  # not published yet
+    response.raise_for_status()
 
-    url = "https://api.energyzero.nl/v1/energyprices"
-    params = {
-        "fromDate": from_date,
-        "tillDate": till_date,
-        "interval": interval,
-        "usageType": 1,
-        "inclBtw": "true" if vat else "false"
-    }
+    # The response also holds the day before; keep only the requested day.
+    day_start = datetime(day.year, day.month, day.day, tzinfo=AMSTERDAM)
+    day_end = day_start + timedelta(days=1)
 
-    response = requests.get(url, params=params)
-    return response.json()
+    return [
+        {"start": entry["start"], "price": float(entry["price"]["value"])}
+        for entry in response.json()[price_type]
+        if day_start <= datetime.fromisoformat(entry["start"].replace("Z", "+00:00")) < day_end
+    ]
 
-# Get today's quarter-hour prices
-prices = get_electricity_prices("2024-01-15", interval=3)
-for price in prices["Prices"]:
-    print(f"{price['readingDate']}: €{price['price']:.4f}/kWh")
+
+prices = get_electricity_prices(datetime.now(AMSTERDAM).date())
+for price in prices:
+    print(f"{price['start']}: €{price['price']:.4f}/kWh")
+if prices:
+    print(f"Average: €{sum(p['price'] for p in prices) / len(prices):.4f}/kWh")
 ```
 
 ### JavaScript/Node.js
 
 ```javascript
-async function getElectricityPrices(date, interval = 4, vat = true) {
-  // Convert local date to UTC range (for CET timezone)
-  const fromDate = `${date}T23:00:00.000Z`;
-  const tillDate = `${date}T22:59:59.999Z`;
-
-  const params = new URLSearchParams({
-    fromDate,
-    tillDate,
-    interval: interval.toString(),
-    usageType: '1',
-    inclBtw: vat.toString()
-  });
-
-  const response = await fetch(
-    `https://api.energyzero.nl/v1/energyprices?${params}`
-  );
-
-  return response.json();
+function dutchDate(date) {
+  // en-GB formats as dd/mm/yyyy
+  return date
+    .toLocaleDateString('en-GB', { timeZone: 'Europe/Amsterdam' })
+    .replaceAll('/', '-');
 }
 
-// Get today's quarter-hour prices
-const prices = await getElectricityPrices('2024-01-15', 3);
-prices.Prices.forEach(p => {
-  console.log(`${p.readingDate}: €${p.price.toFixed(4)}/kWh`);
+async function getElectricityPrices(date, interval = 'INTERVAL_QUARTER', priceType = 'base_with_vat') {
+  const day = dutchDate(date);
+  const params = new URLSearchParams({
+    energyType: 'ENERGY_TYPE_ELECTRICITY',
+    date: day,
+    interval,
+  });
+
+  const response = await fetch(`https://public.api.energyzero.nl/public/v1/prices?${params}`);
+
+  if (response.status === 404) {
+    return []; // not published yet
+  }
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(`EnergyZero API returned ${response.status}: ${error.message}`);
+  }
+
+  const data = await response.json();
+
+  // The response also holds the day before; keep only the requested day.
+  return data[priceType]
+    .filter((entry) => dutchDate(new Date(entry.start)) === day)
+    .map((entry) => ({ start: entry.start, price: Number(entry.price.value) }));
+}
+
+const prices = await getElectricityPrices(new Date());
+prices.forEach((p) => {
+  console.log(`${p.start}: €${p.price.toFixed(4)}/kWh`);
 });
 ```
 
 ### cURL
 
 ```bash
-# Quarter-hour electricity prices for January 15, 2024 (CET)
-curl -s "https://api.energyzero.nl/v1/energyprices?\
-fromDate=2024-01-14T23:00:00.000Z&\
-tillDate=2024-01-15T22:59:59.999Z&\
-interval=3&\
-usageType=1&\
-inclBtw=true" | jq '.Prices[] | "\(.readingDate): €\(.price)"'
+# Quarter-hour electricity prices (market price with VAT) for 13 November 2026
+curl -s "https://public.api.energyzero.nl/public/v1/prices?\
+energyType=ENERGY_TYPE_ELECTRICITY&\
+date=13-11-2026&\
+interval=INTERVAL_QUARTER" \
+  | jq -r '.base_with_vat[] | select(.start >= "2026-11-12T23:00:00Z") | "\(.start): €\(.price.value)"'
+
+# Gas prices (all-in with VAT) around 13 November 2026
+curl -s "https://public.api.energyzero.nl/public/v1/prices?\
+energyType=ENERGY_TYPE_GAS&\
+date=13-11-2026&\
+interval=INTERVAL_DAY" \
+  | jq -r '.all_in_with_vat[] | "\(.start): €\(.price.value)/m³"'
 ```
 
 ## Related Resources
@@ -247,6 +290,6 @@ inclBtw=true" | jq '.Prices[] | "\(.readingDate): €\(.price)"'
 
 ## Notes
 
-- Prices are wholesale market prices. Energy providers add additional costs (energy tax, transport costs, etc.)
+- `base` and `base_with_vat` are wholesale market prices. The all-in prices add energy tax and surcharges; your own supplier may charge different costs.
 - The API is used by various Dutch energy providers including EnergyZero, ANWB Energie, and others
-- Quarter-hour prices (`interval=3`) provide more granular data, useful for optimizing energy usage
+- Quarter-hour prices (`INTERVAL_QUARTER`) provide more granular data, useful for optimizing energy usage
