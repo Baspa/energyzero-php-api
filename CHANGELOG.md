@@ -20,8 +20,13 @@ All notable changes to `energyzero-php-api` will be documented in this file.
 
 - `energyPrices()` now accepts `Interval` enum or integer for backward compatibility
 - All helper methods now accept optional `Interval` parameter
-- Helper methods take the new `interval` parameter before `vat`, so pass `vat` by name or move positional `vat` arguments
+- Helper methods take the new `interval` parameter before `vat`. A positional `vat` boolean now lands in `interval` without an error, so pass `vat` by name
 - Requires PHP 8.2 or higher (was 8.1)
+
+### Unchanged
+
+- Integer interval values (3, 4, etc.) work as before
+- The default is still hourly electricity prices
 
 ### What's Changed
 
