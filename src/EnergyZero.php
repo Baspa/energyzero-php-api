@@ -4,6 +4,7 @@ namespace Baspa\EnergyZero;
 
 use Baspa\EnergyZero\Enums\EnergyType;
 use Baspa\EnergyZero\Enums\Interval;
+use Baspa\EnergyZero\Enums\PriceType;
 use Baspa\EnergyZero\Exceptions\ApiException;
 use Baspa\EnergyZero\Exceptions\EnergyZeroException;
 use Baspa\EnergyZero\Exceptions\NoPricesException;
@@ -11,20 +12,28 @@ use DateTimeImmutable;
 use DateTimeZone;
 use GuzzleHttp\Client;
 use GuzzleHttp\ClientInterface;
+use GuzzleHttp\Exception\BadResponseException;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Psr7\Uri;
 use GuzzleHttp\Psr7\UriResolver;
 use InvalidArgumentException;
 use JsonException;
 use Psr\Clock\ClockInterface;
+use Psr\Http\Message\ResponseInterface;
+use Throwable;
 
+/**
+ * @phpstan-type Price array{readingDate: string, price: float}
+ * @phpstan-type Prices array{Prices: non-empty-list<Price>, average: float}
+ * @phpstan-type PriceAt array{price: float, datetime: string}
+ */
 class EnergyZero
 {
-    private bool $vat = true;
+    private PriceType $defaultPriceType = PriceType::MARKET_WITH_VAT;
 
     private int $requestTimeout = 10;
 
-    private string $baseUri = 'https://api.energyzero.nl/v1/';
+    private string $baseUri = 'https://public.api.energyzero.nl/public/v1/';
 
     private ClientInterface $client;
 
@@ -36,7 +45,7 @@ class EnergyZero
 
     private DateTimeZone $timezone;
 
-    private DateTimeZone $utc;
+    private DateTimeZone $apiTimezone;
 
     public function __construct(?ClientInterface $client = null, ?ClockInterface $clock = null)
     {
@@ -49,8 +58,8 @@ class EnergyZero
             ],
         ]);
         $this->clock = $clock ?? new SystemClock;
-        $this->timezone = new DateTimeZone('Europe/Amsterdam');
-        $this->utc = new DateTimeZone('UTC');
+        $this->apiTimezone = new DateTimeZone('Europe/Amsterdam');
+        $this->timezone = $this->apiTimezone;
     }
 
     public function setDefaultInterval(Interval $interval): self
@@ -67,6 +76,13 @@ class EnergyZero
         return $this;
     }
 
+    public function setDefaultPriceType(PriceType $priceType): self
+    {
+        $this->defaultPriceType = $priceType;
+
+        return $this;
+    }
+
     public function setTimezone(DateTimeZone|string $timezone): self
     {
         $this->timezone = is_string($timezone) ? new DateTimeZone($timezone) : $timezone;
@@ -76,7 +92,7 @@ class EnergyZero
 
     /**
      * @param  array<string, mixed>  $params
-     * @return array<string, mixed>
+     * @return array<mixed>
      *
      * @throws ApiException
      */
@@ -88,6 +104,8 @@ class EnergyZero
 
         try {
             $response = $this->client->request('GET', $target, ['query' => $params]);
+        } catch (BadResponseException $e) {
+            throw $this->httpError($e->getResponse(), $e);
         } catch (GuzzleException $e) {
             throw new ApiException('EnergyZero API request failed: '.$e->getMessage(), $e->getCode(), $e);
         }
@@ -95,7 +113,7 @@ class EnergyZero
         $status = $response->getStatusCode();
 
         if ($status < 200 || $status >= 300) {
-            throw new ApiException('EnergyZero API returned HTTP '.$status.'.', $status);
+            throw $this->httpError($response);
         }
 
         try {
@@ -112,7 +130,7 @@ class EnergyZero
     }
 
     /**
-     * @return array<string, mixed>
+     * @return Prices
      *
      * @throws EnergyZeroException
      * @throws InvalidArgumentException
@@ -121,49 +139,52 @@ class EnergyZero
         string $startDate,
         string $endDate,
         Interval|int|null $interval = null,
-        ?bool $vat = null,
+        PriceType|bool|null $priceType = null,
         EnergyType|int|null $energyType = null
     ): array {
-        $utcStartDate = (new DateTimeImmutable($startDate, $this->timezone))
-            ->setTimezone($this->timezone)
-            ->setTime(0, 0, 0)
-            ->setTimezone($this->utc);
+        $energyType = $this->resolveEnergyType($energyType);
+        $interval = $this->resolveInterval($interval, $energyType);
+        $priceType = $this->resolvePriceType($priceType);
 
-        $utcEndDate = (new DateTimeImmutable($endDate, $this->timezone))
-            ->setTimezone($this->timezone)
-            ->setTime(23, 59, 59)
-            ->setTimezone($this->utc);
+        $from = $this->startOfDay($startDate);
+        $till = $this->startOfDay($endDate)->modify('+1 day');
 
-        if ($vat === null) {
-            $vat = $this->vat;
+        if ($till <= $from) {
+            throw new InvalidArgumentException('The end date is before the start date.');
         }
 
-        $intervalValue = $this->resolveIntervalValue($interval);
-        $energyTypeValue = $this->resolveEnergyTypeValue($energyType);
+        $prices = [];
+        $coveredDates = [];
 
-        if ($intervalValue === Interval::QUARTER->value && $energyTypeValue === EnergyType::GAS->value) {
-            throw new InvalidArgumentException('Interval::QUARTER is not available for gas prices.');
+        foreach ($this->apiDates($from, $till) as $date) {
+            if (isset($coveredDates[$date])) {
+                continue;
+            }
+
+            foreach ($this->pricesForApiDate($date, $interval, $priceType, $energyType) as $timestamp => $price) {
+                $coveredDates[$this->apiDate(new DateTimeImmutable('@'.$timestamp))] = true;
+
+                if ($timestamp >= $from->getTimestamp() && $timestamp < $till->getTimestamp()) {
+                    $prices[$timestamp] = $price;
+                }
+            }
         }
 
-        $params = [
-            'fromDate' => $utcStartDate->format('Y-m-d\TH:i:s.000\Z'),
-            'tillDate' => $utcEndDate->format('Y-m-d\TH:i:s.999\Z'),
-            'interval' => $intervalValue,
-            'usageType' => $energyTypeValue,
-            'inclBtw' => $vat ? 'true' : 'false',
-        ];
+        ksort($prices);
+        $prices = array_values($prices);
 
-        $data = $this->request('energyprices', $params);
-
-        if (empty($data['Prices'])) {
+        if ($prices === []) {
             throw new NoPricesException('No energy prices found for this period.');
         }
 
-        return $data;
+        return [
+            'Prices' => $prices,
+            'average' => array_sum(array_column($prices, 'price')) / count($prices),
+        ];
     }
 
     /**
-     * @return array<string, mixed>
+     * @return Prices
      *
      * @throws EnergyZeroException
      * @throws InvalidArgumentException
@@ -172,27 +193,37 @@ class EnergyZero
         string $startDate,
         string $endDate,
         Interval|int|null $interval = null,
-        ?bool $vat = null
+        PriceType|bool|null $priceType = null
     ): array {
-        return $this->energyPrices($startDate, $endDate, $interval, $vat, EnergyType::GAS);
+        return $this->energyPrices($startDate, $endDate, $interval, $priceType, EnergyType::GAS);
     }
 
     /**
-     * @return array<string, mixed>
+     * @return PriceAt
      *
      * @throws EnergyZeroException
      * @throws InvalidArgumentException
      */
-    public function getCurrentPrice(?bool $vat = null, EnergyType|int|null $energyType = null): array
+    public function getCurrentPrice(PriceType|bool|null $priceType = null, EnergyType|int|null $energyType = null): array
     {
-        $now = $this->clock->now()->setTimezone($this->timezone);
-        $today = $now->format('Y-m-d');
+        $energyType = $this->resolveEnergyType($energyType);
+        $now = $this->clock->now();
+        $today = $now->setTimezone($this->timezone);
 
-        $data = $this->energyPrices($today, $today, Interval::HOUR, $vat, $energyType);
+        // Until 06:00 Dutch time, the current gas day is the one that started yesterday.
+        $firstDay = $energyType === EnergyType::GAS ? $today->modify('-1 day') : $today;
+
+        $prices = $this->energyPrices(
+            $firstDay->format('Y-m-d'),
+            $today->format('Y-m-d'),
+            $this->hourOrDay($energyType),
+            $priceType,
+            $energyType,
+        )['Prices'];
         $current = null;
 
-        foreach ($data['Prices'] as $price) {
-            if (new DateTimeImmutable($price['readingDate'], $this->utc) <= $now) {
+        foreach ($prices as $price) {
+            if (new DateTimeImmutable($price['readingDate']) <= $now) {
                 $current = $price;
             }
         }
@@ -201,26 +232,24 @@ class EnergyZero
             throw new NoPricesException('Could not find current price.');
         }
 
-        return [
-            'price' => $current['price'],
-            'datetime' => $current['readingDate'],
-        ];
+        return $this->priceAt($current);
     }
 
     /**
      * @param  array<int>  $hours
-     * @return array<int, array<string, mixed>>
+     * @return list<Price>
      *
      * @throws EnergyZeroException
      * @throws InvalidArgumentException
      */
-    public function getPricesForHours(string $date, array $hours, ?bool $vat = null, EnergyType|int|null $energyType = null): array
+    public function getPricesForHours(string $date, array $hours, PriceType|bool|null $priceType = null, EnergyType|int|null $energyType = null): array
     {
-        $data = $this->energyPrices($date, $date, Interval::HOUR, $vat, $energyType);
+        $energyType = $this->resolveEnergyType($energyType);
+        $prices = $this->energyPrices($date, $date, $this->hourOrDay($energyType), $priceType, $energyType)['Prices'];
         $result = [];
 
-        foreach ($data['Prices'] as $price) {
-            $priceDateTime = (new DateTimeImmutable($price['readingDate'], $this->utc))->setTimezone($this->timezone);
+        foreach ($prices as $price) {
+            $priceDateTime = (new DateTimeImmutable($price['readingDate']))->setTimezone($this->timezone);
             $hour = (int) $priceDateTime->format('G');
 
             if (in_array($hour, $hours, true)) {
@@ -239,16 +268,14 @@ class EnergyZero
         string $startDate,
         string $endDate,
         Interval|int|null $interval = null,
-        ?bool $vat = null,
+        PriceType|bool|null $priceType = null,
         EnergyType|int|null $energyType = null
     ): float {
-        $data = $this->energyPrices($startDate, $endDate, $interval, $vat, $energyType);
-
-        return $data['average'];
+        return $this->energyPrices($startDate, $endDate, $interval, $priceType, $energyType)['average'];
     }
 
     /**
-     * @return array<string, mixed>
+     * @return PriceAt
      *
      * @throws EnergyZeroException
      * @throws InvalidArgumentException
@@ -257,27 +284,23 @@ class EnergyZero
         string $startDate,
         string $endDate,
         Interval|int|null $interval = null,
-        ?bool $vat = null,
+        PriceType|bool|null $priceType = null,
         EnergyType|int|null $energyType = null
     ): array {
-        $data = $this->energyPrices($startDate, $endDate, $interval, $vat, $energyType);
-        $prices = array_column($data['Prices'], 'price');
+        $prices = $this->energyPrices($startDate, $endDate, $interval, $priceType, $energyType)['Prices'];
+        $lowest = $prices[0];
 
-        if ($prices === []) {
-            throw new NoPricesException('No prices available for this period.');
+        foreach ($prices as $price) {
+            if ($price['price'] < $lowest['price']) {
+                $lowest = $price;
+            }
         }
 
-        $lowestPrice = min($prices);
-        $lowestPriceIndex = array_search($lowestPrice, $prices);
-
-        return [
-            'price' => $lowestPrice,
-            'datetime' => $data['Prices'][$lowestPriceIndex]['readingDate'],
-        ];
+        return $this->priceAt($lowest);
     }
 
     /**
-     * @return array<string, mixed>
+     * @return PriceAt
      *
      * @throws EnergyZeroException
      * @throws InvalidArgumentException
@@ -286,27 +309,23 @@ class EnergyZero
         string $startDate,
         string $endDate,
         Interval|int|null $interval = null,
-        ?bool $vat = null,
+        PriceType|bool|null $priceType = null,
         EnergyType|int|null $energyType = null
     ): array {
-        $data = $this->energyPrices($startDate, $endDate, $interval, $vat, $energyType);
-        $prices = array_column($data['Prices'], 'price');
+        $prices = $this->energyPrices($startDate, $endDate, $interval, $priceType, $energyType)['Prices'];
+        $highest = $prices[0];
 
-        if ($prices === []) {
-            throw new NoPricesException('No prices available for this period.');
+        foreach ($prices as $price) {
+            if ($price['price'] > $highest['price']) {
+                $highest = $price;
+            }
         }
 
-        $highestPrice = max($prices);
-        $highestPriceIndex = array_search($highestPrice, $prices);
-
-        return [
-            'price' => $highestPrice,
-            'datetime' => $data['Prices'][$highestPriceIndex]['readingDate'],
-        ];
+        return $this->priceAt($highest);
     }
 
     /**
-     * @return array<int, array<string, mixed>>
+     * @return list<Price>
      *
      * @throws EnergyZeroException
      * @throws InvalidArgumentException
@@ -316,18 +335,16 @@ class EnergyZero
         string $endDate,
         float $threshold,
         Interval|int|null $interval = null,
-        ?bool $vat = null,
+        PriceType|bool|null $priceType = null,
         EnergyType|int|null $energyType = null
     ): array {
-        $data = $this->energyPrices($startDate, $endDate, $interval, $vat, $energyType);
+        $prices = $this->energyPrices($startDate, $endDate, $interval, $priceType, $energyType)['Prices'];
 
-        return array_values(array_filter($data['Prices'], function ($price) use ($threshold) {
-            return $price['price'] > $threshold;
-        }));
+        return array_values(array_filter($prices, fn (array $price) => $price['price'] > $threshold));
     }
 
     /**
-     * @return array<int, array<string, mixed>>
+     * @return list<Price>
      *
      * @throws EnergyZeroException
      * @throws InvalidArgumentException
@@ -337,18 +354,16 @@ class EnergyZero
         string $endDate,
         float $threshold,
         Interval|int|null $interval = null,
-        ?bool $vat = null,
+        PriceType|bool|null $priceType = null,
         EnergyType|int|null $energyType = null
     ): array {
-        $data = $this->energyPrices($startDate, $endDate, $interval, $vat, $energyType);
+        $prices = $this->energyPrices($startDate, $endDate, $interval, $priceType, $energyType)['Prices'];
 
-        return array_values(array_filter($data['Prices'], function ($price) use ($threshold) {
-            return $price['price'] < $threshold;
-        }));
+        return array_values(array_filter($prices, fn (array $price) => $price['price'] < $threshold));
     }
 
     /**
-     * @return array<int, array<string, mixed>>
+     * @return list<Price>
      *
      * @throws EnergyZeroException
      * @throws InvalidArgumentException
@@ -358,20 +373,17 @@ class EnergyZero
         string $endDate,
         int $topN = 5,
         Interval|int|null $interval = null,
-        ?bool $vat = null,
+        PriceType|bool|null $priceType = null,
         EnergyType|int|null $energyType = null
     ): array {
-        $data = $this->energyPrices($startDate, $endDate, $interval, $vat, $energyType);
-        $prices = $data['Prices'];
-        usort($prices, function ($a, $b) {
-            return $b['price'] <=> $a['price'];
-        });
+        $prices = $this->energyPrices($startDate, $endDate, $interval, $priceType, $energyType)['Prices'];
+        usort($prices, fn (array $a, array $b) => $b['price'] <=> $a['price']);
 
         return array_slice($prices, 0, $topN);
     }
 
     /**
-     * @return array<int, array<string, mixed>>
+     * @return list<Price>
      *
      * @throws EnergyZeroException
      * @throws InvalidArgumentException
@@ -381,53 +393,162 @@ class EnergyZero
         string $endDate,
         int $topN = 5,
         Interval|int|null $interval = null,
-        ?bool $vat = null,
+        PriceType|bool|null $priceType = null,
         EnergyType|int|null $energyType = null
     ): array {
-        $data = $this->energyPrices($startDate, $endDate, $interval, $vat, $energyType);
-        $prices = $data['Prices'];
-        usort($prices, function ($a, $b) {
-            return $a['price'] <=> $b['price'];
-        });
+        $prices = $this->energyPrices($startDate, $endDate, $interval, $priceType, $energyType)['Prices'];
+        usort($prices, fn (array $a, array $b) => $a['price'] <=> $b['price']);
 
         return array_slice($prices, 0, $topN);
     }
 
-    private function resolveIntervalValue(Interval|int|null $interval): int
+    /**
+     * @return array<int, Price>
+     *
+     * @throws ApiException
+     */
+    private function pricesForApiDate(string $date, Interval $interval, PriceType $priceType, EnergyType $energyType): array
     {
-        if ($interval === null) {
-            return $this->defaultInterval->value;
+        try {
+            $data = $this->request('prices', [
+                'energyType' => $energyType->apiValue(),
+                'date' => $date,
+                'interval' => $interval->apiValue(),
+            ]);
+        } catch (ApiException $e) {
+            if ($e->getCode() === 404) {
+                return [];
+            }
+
+            throw $e;
         }
 
-        if ($interval instanceof Interval) {
-            return $interval->value;
+        $entries = $data[$priceType->value] ?? null;
+
+        if (! is_array($entries)) {
+            throw new ApiException("EnergyZero API returned no {$priceType->value} prices.");
         }
 
-        $resolved = Interval::tryFrom($interval);
+        $prices = [];
 
-        if ($resolved === null) {
-            throw new InvalidArgumentException("Unknown interval {$interval}; use an Interval enum case.");
+        foreach ($entries as $entry) {
+            $start = is_array($entry) ? $entry['start'] ?? null : null;
+            $price = is_array($entry) ? $entry['price'] ?? null : null;
+            $value = is_array($price) ? $price['value'] ?? null : null;
+            $timestamp = is_string($start) ? strtotime($start) : false;
+
+            if (! is_string($start) || $timestamp === false || ! is_numeric($value)) {
+                throw new ApiException('EnergyZero API returned a price in an unexpected format.');
+            }
+
+            $prices[$timestamp] = ['readingDate' => $start, 'price' => (float) $value];
         }
 
-        return $resolved->value;
+        return $prices;
     }
 
-    private function resolveEnergyTypeValue(EnergyType|int|null $energyType): int
+    /**
+     * @return list<string>
+     */
+    private function apiDates(DateTimeImmutable $from, DateTimeImmutable $till): array
+    {
+        $first = $from->setTimezone($this->apiTimezone)->setTime(0, 0);
+        $day = $till->modify('-1 second')->setTimezone($this->apiTimezone)->setTime(0, 0);
+        $dates = [];
+
+        // Newest first: the response for a date also holds the day before it.
+        while ($day >= $first) {
+            $dates[] = $this->apiDate($day);
+            $day = $day->modify('-1 day');
+        }
+
+        return $dates;
+    }
+
+    private function apiDate(DateTimeImmutable $moment): string
+    {
+        return $moment->setTimezone($this->apiTimezone)->format('d-m-Y');
+    }
+
+    private function startOfDay(string $date): DateTimeImmutable
+    {
+        return (new DateTimeImmutable($date, $this->timezone))
+            ->setTimezone($this->timezone)
+            ->setTime(0, 0);
+    }
+
+    /**
+     * @param  Price  $price
+     * @return PriceAt
+     */
+    private function priceAt(array $price): array
+    {
+        return ['price' => $price['price'], 'datetime' => $price['readingDate']];
+    }
+
+    private function hourOrDay(EnergyType $energyType): Interval
+    {
+        return $energyType === EnergyType::GAS ? Interval::DAY : Interval::HOUR;
+    }
+
+    private function httpError(ResponseInterface $response, ?Throwable $previous = null): ApiException
+    {
+        $status = $response->getStatusCode();
+        $error = json_decode((string) $response->getBody(), true);
+        $message = is_array($error) && is_string($error['message'] ?? null) ? $error['message'] : null;
+
+        return new ApiException(
+            "EnergyZero API returned HTTP {$status}".($message === null ? '.' : ": {$message}"),
+            $status,
+            $previous,
+        );
+    }
+
+    private function resolvePriceType(PriceType|bool|null $priceType): PriceType
+    {
+        return match ($priceType) {
+            null => $this->defaultPriceType,
+            true => PriceType::MARKET_WITH_VAT,
+            false => PriceType::MARKET,
+            default => $priceType,
+        };
+    }
+
+    private function resolveInterval(Interval|int|null $interval, EnergyType $energyType): Interval
+    {
+        if (is_int($interval)) {
+            $interval = Interval::tryFrom($interval)
+                ?? throw new InvalidArgumentException("Unknown interval {$interval}; use an Interval enum case.");
+        }
+
+        if ($energyType === EnergyType::GAS) {
+            if ($interval !== null && $interval !== Interval::DAY) {
+                throw new InvalidArgumentException('Gas prices are only available per day; use Interval::DAY or leave the interval out.');
+            }
+
+            return Interval::DAY;
+        }
+
+        $interval ??= $this->defaultInterval;
+
+        if ($interval === Interval::DAY) {
+            throw new InvalidArgumentException('Interval::DAY is not available for electricity prices; use Interval::QUARTER or Interval::HOUR.');
+        }
+
+        return $interval;
+    }
+
+    private function resolveEnergyType(EnergyType|int|null $energyType): EnergyType
     {
         if ($energyType === null) {
-            return $this->defaultEnergyType->value;
+            return $this->defaultEnergyType;
         }
 
         if ($energyType instanceof EnergyType) {
-            return $energyType->value;
+            return $energyType;
         }
 
-        $resolved = EnergyType::tryFrom($energyType);
-
-        if ($resolved === null) {
-            throw new InvalidArgumentException("Unknown energy type {$energyType}; use an EnergyType enum case.");
-        }
-
-        return $resolved->value;
+        return EnergyType::tryFrom($energyType)
+            ?? throw new InvalidArgumentException("Unknown energy type {$energyType}; use an EnergyType enum case.");
     }
 }
