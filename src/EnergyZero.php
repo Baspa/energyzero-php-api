@@ -4,12 +4,18 @@ namespace Baspa\EnergyZero;
 
 use Baspa\EnergyZero\Enums\EnergyType;
 use Baspa\EnergyZero\Enums\Interval;
+use Baspa\EnergyZero\Exceptions\ApiException;
+use Baspa\EnergyZero\Exceptions\NoPricesException;
 use DateTime;
 use DateTimeZone;
 use Exception;
 use GuzzleHttp\Client;
 use GuzzleHttp\ClientInterface;
-use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\Psr7\Uri;
+use GuzzleHttp\Psr7\UriResolver;
+use InvalidArgumentException;
+use JsonException;
 
 class EnergyZero
 {
@@ -53,25 +59,37 @@ class EnergyZero
 
     /**
      * @param  array<string, mixed>  $params
-     * @return array<string, mixed>|null
+     * @return array<string, mixed>
      *
-     * @throws Exception
+     * @throws ApiException
      */
-    public function request(string $uri, array $params = []): ?array
+    public function request(string $uri, array $params = []): array
     {
+        $url = UriResolver::resolve(new Uri($this->baseUri), new Uri($uri));
+
         try {
-            $response = $this->client->request('GET', $uri, ['query' => $params]);
-
-            if ($response->getStatusCode() === 200) {
-                return json_decode($response->getBody()->getContents(), true);
-            } else {
-                throw new Exception('Unexpected response status: '.$response->getStatusCode());
-            }
-        } catch (RequestException $e) {
-            error_log('Error: '.$e->getMessage());
-
-            return null;
+            $response = $this->client->request('GET', $url, ['query' => $params]);
+        } catch (GuzzleException $e) {
+            throw new ApiException('EnergyZero API request failed: '.$e->getMessage(), $e->getCode(), $e);
         }
+
+        $status = $response->getStatusCode();
+
+        if ($status < 200 || $status >= 300) {
+            throw new ApiException('EnergyZero API returned HTTP '.$status.'.', $status);
+        }
+
+        try {
+            $data = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException $e) {
+            throw new ApiException('EnergyZero API returned invalid JSON: '.$e->getMessage(), 0, $e);
+        }
+
+        if (! is_array($data)) {
+            throw new ApiException('EnergyZero API returned JSON that is not an object.');
+        }
+
+        return $data;
     }
 
     /**
@@ -104,6 +122,10 @@ class EnergyZero
         $intervalValue = $this->resolveIntervalValue($interval);
         $energyTypeValue = $this->resolveEnergyTypeValue($energyType);
 
+        if ($intervalValue === Interval::QUARTER->value && $energyTypeValue === EnergyType::GAS->value) {
+            throw new InvalidArgumentException('Interval::QUARTER is not available for gas prices.');
+        }
+
         $params = [
             'fromDate' => $utcStartDate->format('Y-m-d\TH:i:s.000\Z'),
             'tillDate' => $utcEndDate->format('Y-m-d\TH:i:s.999\Z'),
@@ -115,7 +137,7 @@ class EnergyZero
         $data = $this->request('energyprices', $params);
 
         if (empty($data['Prices'])) {
-            throw new Exception('No energy prices found for this period.');
+            throw new NoPricesException('No energy prices found for this period.');
         }
 
         return $data;
@@ -158,7 +180,7 @@ class EnergyZero
             }
         }
 
-        throw new Exception('Could not find current price.');
+        throw new NoPricesException('Could not find current price.');
     }
 
     /**
@@ -217,7 +239,7 @@ class EnergyZero
         $prices = array_column($data['Prices'], 'price');
 
         if ($prices === []) {
-            throw new Exception('No prices available for this period.');
+            throw new NoPricesException('No prices available for this period.');
         }
 
         $lowestPrice = min($prices);
@@ -246,7 +268,7 @@ class EnergyZero
         $prices = array_column($data['Prices'], 'price');
 
         if ($prices === []) {
-            throw new Exception('No prices available for this period.');
+            throw new NoPricesException('No prices available for this period.');
         }
 
         $highestPrice = max($prices);
@@ -356,7 +378,13 @@ class EnergyZero
             return $interval->value;
         }
 
-        return $interval;
+        $resolved = Interval::tryFrom($interval);
+
+        if ($resolved === null) {
+            throw new InvalidArgumentException("Unknown interval {$interval}; use an Interval enum case.");
+        }
+
+        return $resolved->value;
     }
 
     private function resolveEnergyTypeValue(EnergyType|int|null $energyType): int
@@ -369,6 +397,12 @@ class EnergyZero
             return $energyType->value;
         }
 
-        return $energyType;
+        $resolved = EnergyType::tryFrom($energyType);
+
+        if ($resolved === null) {
+            throw new InvalidArgumentException("Unknown energy type {$energyType}; use an EnergyType enum case.");
+        }
+
+        return $resolved->value;
     }
 }
