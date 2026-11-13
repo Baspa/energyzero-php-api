@@ -2,8 +2,13 @@
     "name": "baspa/energyzero-php-api",
     "description": "PHP client for the dynamic prices from EnergyZero",
     "keywords": [
-        "Baspa",
-        "energyzero-php-api"
+        "energyzero",
+        "energyzero-php-api",
+        "energy-prices",
+        "dynamic-energy-prices",
+        "electricity",
+        "gas",
+        "netherlands"
     ],
     "homepage": "https://github.com/baspa/energyzero-php-api",
     "license": "MIT",
