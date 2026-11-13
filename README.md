@@ -42,6 +42,26 @@ $prices = (new EnergyZero())->energyPrices(
 
 The response will be an array of prices for the specified date range and also include the average price for the period.
 
+### Timezone
+
+Dates and hours are interpreted in `Europe/Amsterdam` by default, because EnergyZero prices are per Dutch day. `energyPrices('2024-01-15', '2024-01-15')` returns the prices from 00:00 to 23:00 Dutch time. The `readingDate` values in the response stay in UTC (`2024-01-14T23:00:00Z` is 00:00 in Amsterdam).
+
+Use `setTimezone()` to change it:
+
+```php
+$energyZero = (new EnergyZero())->setTimezone('UTC');
+
+$energyZero = (new EnergyZero())->setTimezone(new DateTimeZone('Europe/Brussels'));
+```
+
+The hours passed to `getPricesForHours()` use this timezone too, and `getCurrentPrice()` uses it to decide which day is today. On the day the clocks go back, hour 2 occurs twice, so `getPricesForHours()` returns two prices for it.
+
+`getCurrentPrice()` reads the time from a [PSR-20](https://www.php-fig.org/psr/psr-20/) clock. Pass your own as the second constructor argument to control "now", for example in tests:
+
+```php
+$energyZero = new EnergyZero(clock: $clock);
+```
+
 ### Interval options
 
 The following interval options are available:
@@ -121,12 +141,12 @@ Get the current electricity price for the current hour:
 
 ```php
 $currentPrice = (new EnergyZero())->getCurrentPrice();
-// Returns: ['price' => 0.25, 'datetime' => '2024-01-01T14:00:00']
+// Returns: ['price' => 0.25, 'datetime' => '2024-01-01T13:00:00Z']
 ```
 
 ### Get prices for specific hours
 
-Get prices for specific hours of a day:
+Get prices for specific hours of a day, in the configured timezone:
 
 ```php
 $prices = (new EnergyZero())->getPricesForHours(
