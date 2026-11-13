@@ -7,7 +7,7 @@ use Baspa\EnergyZero\Enums\Interval;
 use Baspa\EnergyZero\Exceptions\ApiException;
 use Baspa\EnergyZero\Exceptions\EnergyZeroException;
 use Baspa\EnergyZero\Exceptions\NoPricesException;
-use DateTime;
+use DateTimeImmutable;
 use DateTimeZone;
 use GuzzleHttp\Client;
 use GuzzleHttp\ClientInterface;
@@ -16,6 +16,7 @@ use GuzzleHttp\Psr7\Uri;
 use GuzzleHttp\Psr7\UriResolver;
 use InvalidArgumentException;
 use JsonException;
+use Psr\Clock\ClockInterface;
 
 class EnergyZero
 {
@@ -31,7 +32,13 @@ class EnergyZero
 
     private EnergyType $defaultEnergyType = EnergyType::ELECTRICITY;
 
-    public function __construct(?ClientInterface $client = null)
+    private ClockInterface $clock;
+
+    private DateTimeZone $timezone;
+
+    private DateTimeZone $utc;
+
+    public function __construct(?ClientInterface $client = null, ?ClockInterface $clock = null)
     {
         $this->client = $client ?? new Client([
             'base_uri' => $this->baseUri,
@@ -41,6 +48,9 @@ class EnergyZero
                 'User-Agent' => 'PHPEnergyZero/1.0',
             ],
         ]);
+        $this->clock = $clock ?? new SystemClock;
+        $this->timezone = new DateTimeZone('Europe/Amsterdam');
+        $this->utc = new DateTimeZone('UTC');
     }
 
     public function setDefaultInterval(Interval $interval): self
@@ -53,6 +63,13 @@ class EnergyZero
     public function setDefaultEnergyType(EnergyType $type): self
     {
         $this->defaultEnergyType = $type;
+
+        return $this;
+    }
+
+    public function setTimezone(DateTimeZone|string $timezone): self
+    {
+        $this->timezone = is_string($timezone) ? new DateTimeZone($timezone) : $timezone;
 
         return $this;
     }
@@ -107,16 +124,15 @@ class EnergyZero
         ?bool $vat = null,
         EnergyType|int|null $energyType = null
     ): array {
-        $localTz = new DateTimeZone(date_default_timezone_get());
-        $utcTz = new DateTimeZone('UTC');
+        $utcStartDate = (new DateTimeImmutable($startDate, $this->timezone))
+            ->setTimezone($this->timezone)
+            ->setTime(0, 0, 0)
+            ->setTimezone($this->utc);
 
-        $utcStartDate = new DateTime($startDate, $localTz);
-        $utcStartDate->setTime(0, 0, 0);
-        $utcStartDate->setTimezone($utcTz);
-
-        $utcEndDate = new DateTime($endDate, $localTz);
-        $utcEndDate->setTime(23, 59, 59);
-        $utcEndDate->setTimezone($utcTz);
+        $utcEndDate = (new DateTimeImmutable($endDate, $this->timezone))
+            ->setTimezone($this->timezone)
+            ->setTime(23, 59, 59)
+            ->setTimezone($this->utc);
 
         if ($vat === null) {
             $vat = $this->vat;
@@ -169,23 +185,26 @@ class EnergyZero
      */
     public function getCurrentPrice(?bool $vat = null, EnergyType|int|null $energyType = null): array
     {
-        $now = new DateTime;
+        $now = $this->clock->now()->setTimezone($this->timezone);
         $today = $now->format('Y-m-d');
 
         $data = $this->energyPrices($today, $today, Interval::HOUR, $vat, $energyType);
-        $currentHour = (int) $now->format('G');
+        $current = null;
 
         foreach ($data['Prices'] as $price) {
-            $priceDateTime = new DateTime($price['readingDate']);
-            if ((int) $priceDateTime->format('G') === $currentHour) {
-                return [
-                    'price' => $price['price'],
-                    'datetime' => $price['readingDate'],
-                ];
+            if (new DateTimeImmutable($price['readingDate'], $this->utc) <= $now) {
+                $current = $price;
             }
         }
 
-        throw new NoPricesException('Could not find current price.');
+        if ($current === null) {
+            throw new NoPricesException('Could not find current price.');
+        }
+
+        return [
+            'price' => $current['price'],
+            'datetime' => $current['readingDate'],
+        ];
     }
 
     /**
@@ -201,7 +220,7 @@ class EnergyZero
         $result = [];
 
         foreach ($data['Prices'] as $price) {
-            $priceDateTime = new DateTime($price['readingDate']);
+            $priceDateTime = (new DateTimeImmutable($price['readingDate'], $this->utc))->setTimezone($this->timezone);
             $hour = (int) $priceDateTime->format('G');
 
             if (in_array($hour, $hours, true)) {

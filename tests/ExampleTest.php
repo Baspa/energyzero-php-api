@@ -4,6 +4,7 @@ use Baspa\EnergyZero\EnergyZero;
 use Baspa\EnergyZero\Enums\EnergyType;
 use Baspa\EnergyZero\Enums\Interval;
 use Baspa\EnergyZero\Exceptions\ApiException;
+use Baspa\EnergyZero\Tests\FixedClock;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
@@ -132,31 +133,32 @@ it('can get gas prices', function () {
 });
 
 it('can get current price', function () {
-    $now = new DateTime;
-    $currentHour = (int) $now->format('G');
-    $today = $now->format('Y-m-d');
-
     $mockData = [
         'Prices' => [
-            ['readingDate' => $today.'T'.str_pad((string) $currentHour, 2, '0', STR_PAD_LEFT).':00:00', 'price' => 0.15],
+            ['readingDate' => '2026-11-13T09:00:00Z', 'price' => 0.15],
         ],
         'average' => 0.15,
     ];
 
     $this->mockHandler->append(new Response(200, [], json_encode($mockData)));
 
-    $result = $this->energyZero->getCurrentPrice();
+    $energyZero = new EnergyZero(
+        new Client(['handler' => HandlerStack::create($this->mockHandler)]),
+        new FixedClock('2026-11-13T09:35:00Z'),
+    );
 
-    expect($result['price'])->toBe(0.15);
+    $result = $energyZero->getCurrentPrice();
+
+    expect($result)->toBe(['price' => 0.15, 'datetime' => '2026-11-13T09:00:00Z']);
 });
 
 it('can get prices for specific hours', function () {
     $mockData = [
         'Prices' => [
-            ['readingDate' => '2023-05-01T08:00:00', 'price' => 0.1],
-            ['readingDate' => '2023-05-01T09:00:00', 'price' => 0.12],
-            ['readingDate' => '2023-05-01T10:00:00', 'price' => 0.15],
-            ['readingDate' => '2023-05-01T11:00:00', 'price' => 0.18],
+            ['readingDate' => '2023-05-01T06:00:00Z', 'price' => 0.1],
+            ['readingDate' => '2023-05-01T07:00:00Z', 'price' => 0.12],
+            ['readingDate' => '2023-05-01T08:00:00Z', 'price' => 0.15],
+            ['readingDate' => '2023-05-01T09:00:00Z', 'price' => 0.18],
         ],
         'average' => 0.1375,
     ];
