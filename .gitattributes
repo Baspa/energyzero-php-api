@@ -13,3 +13,6 @@
 /art export-ignore
 /docs export-ignore
 /UPGRADING.md export-ignore
+/moat.toml export-ignore
+/phpstan.neon.dist export-ignore
+/phpstan-baseline.neon export-ignore
