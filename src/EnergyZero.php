@@ -4,12 +4,15 @@ namespace Baspa\EnergyZero;
 
 use Baspa\EnergyZero\Enums\EnergyType;
 use Baspa\EnergyZero\Enums\Interval;
+use DateInterval;
 use DateTime;
+use DateTimeImmutable;
 use DateTimeZone;
 use Exception;
 use GuzzleHttp\Client;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\RequestException;
+use Psr\Clock\ClockInterface;
 
 class EnergyZero
 {
@@ -25,7 +28,11 @@ class EnergyZero
 
     private EnergyType $defaultEnergyType = EnergyType::ELECTRICITY;
 
-    public function __construct(?ClientInterface $client = null)
+    private ClockInterface $clock;
+
+    private DateTimeZone $timezone;
+
+    public function __construct(?ClientInterface $client = null, ?ClockInterface $clock = null)
     {
         $this->client = $client ?? new Client([
             'base_uri' => $this->baseUri,
@@ -35,6 +42,8 @@ class EnergyZero
                 'User-Agent' => 'PHPEnergyZero/1.0',
             ],
         ]);
+        $this->clock = $clock ?? new SystemClock;
+        $this->timezone = new DateTimeZone('Europe/Amsterdam');
     }
 
     public function setDefaultInterval(Interval $interval): self
@@ -47,6 +56,13 @@ class EnergyZero
     public function setDefaultEnergyType(EnergyType $type): self
     {
         $this->defaultEnergyType = $type;
+
+        return $this;
+    }
+
+    public function setTimezone(DateTimeZone|string $timezone): self
+    {
+        $this->timezone = is_string($timezone) ? new DateTimeZone($timezone) : $timezone;
 
         return $this;
     }
@@ -86,14 +102,13 @@ class EnergyZero
         ?bool $vat = null,
         EnergyType|int|null $energyType = null
     ): array {
-        $localTz = new DateTimeZone(date_default_timezone_get());
         $utcTz = new DateTimeZone('UTC');
 
-        $utcStartDate = new DateTime($startDate, $localTz);
+        $utcStartDate = new DateTime($startDate, $this->timezone);
         $utcStartDate->setTime(0, 0, 0);
         $utcStartDate->setTimezone($utcTz);
 
-        $utcEndDate = new DateTime($endDate, $localTz);
+        $utcEndDate = new DateTime($endDate, $this->timezone);
         $utcEndDate->setTime(23, 59, 59);
         $utcEndDate->setTimezone($utcTz);
 
@@ -142,15 +157,16 @@ class EnergyZero
      */
     public function getCurrentPrice(?bool $vat = null, EnergyType|int|null $energyType = null): array
     {
-        $now = new DateTime;
+        $now = $this->clock->now()->setTimezone($this->timezone);
         $today = $now->format('Y-m-d');
 
         $data = $this->energyPrices($today, $today, Interval::HOUR, $vat, $energyType);
-        $currentHour = (int) $now->format('G');
+        $utcTz = new DateTimeZone('UTC');
+        $oneHour = new DateInterval('PT1H');
 
         foreach ($data['Prices'] as $price) {
-            $priceDateTime = new DateTime($price['readingDate']);
-            if ((int) $priceDateTime->format('G') === $currentHour) {
+            $slotStart = new DateTimeImmutable($price['readingDate'], $utcTz);
+            if ($slotStart <= $now && $now < $slotStart->add($oneHour)) {
                 return [
                     'price' => $price['price'],
                     'datetime' => $price['readingDate'],
@@ -170,10 +186,11 @@ class EnergyZero
     public function getPricesForHours(string $date, array $hours, ?bool $vat = null, EnergyType|int|null $energyType = null): array
     {
         $data = $this->energyPrices($date, $date, Interval::HOUR, $vat, $energyType);
+        $utcTz = new DateTimeZone('UTC');
         $result = [];
 
         foreach ($data['Prices'] as $price) {
-            $priceDateTime = new DateTime($price['readingDate']);
+            $priceDateTime = (new DateTimeImmutable($price['readingDate'], $utcTz))->setTimezone($this->timezone);
             $hour = (int) $priceDateTime->format('G');
 
             if (in_array($hour, $hours, true)) {
