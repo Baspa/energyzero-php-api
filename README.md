@@ -284,7 +284,12 @@ Please see [CHANGELOG](CHANGELOG.md) for more information on what has changed re
 
 ## Contributing
 
-Please see [CONTRIBUTING](https://github.com/spatie/.github/blob/main/CONTRIBUTING.md) for details.
+Contributions are welcome:
+
+1. Fork the repository and create a branch.
+2. Make your change and add or update tests.
+3. Run `composer test` (tests must pass), `composer analyse` (PHPStan) and `composer format` (fixes code style).
+4. Open a pull request against `main`.
 
 ## Security Vulnerabilities
 
