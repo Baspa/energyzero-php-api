@@ -2,6 +2,41 @@
 
 All notable changes to `energyzero-php-api` will be documented in this file.
 
+## v3.0.0 - 2026-11-13
+
+### Breaking changes
+
+- Prices now come from EnergyZero's public API (`public.api.energyzero.nl`). The old endpoint never returned quarter-hour prices, so `Interval::QUARTER` didn't work in v2.
+- `$vat` is now `$priceType` (`PriceType|bool|null`); `true`/`false` still work positionally, named `vat:` arguments must be renamed.
+- `Interval::WEEK`, `MONTH` and `YEAR` are removed. Electricity: `QUARTER` or `HOUR`. Gas: daily only.
+- Results contain `Prices` and `average` only.
+- Dates and hours are interpreted in `Europe/Amsterdam` by default instead of PHP's default timezone (`setTimezone()` to change).
+- Typed exceptions: `ApiException` and `NoPricesException` (both extend `EnergyZeroException`, which extends `\Exception`). `request()` throws instead of returning `null`; nothing is written to `error_log()` any more.
+- Requires PHP 8.3+.
+
+See "Upgrading from v2" in the README.
+
+### Added
+
+- Quarter-hour electricity prices that actually return data.
+- `PriceType` enum with market and all-in prices, with or without VAT, and `setDefaultPriceType()`.
+- `setTimezone()` and an optional PSR-20 clock as second constructor argument.
+
+### Fixed
+
+- `getCurrentPrice()` and `getPricesForHours()` compared UTC hours with local hours and returned the wrong slot.
+- API errors were logged and reported as "No energy prices found"; network errors leaked raw Guzzle exceptions.
+- An injected client without `base_uri` failed silently.
+
+### What's Changed
+
+* fix!: throw typed exceptions instead of swallowing API errors by @Baspa in https://github.com/Baspa/energyzero-php-api/pull/31
+* chore: housekeeping (changelog, contributing, dist archive, keywords, Pest 4) by @Baspa in https://github.com/Baspa/energyzero-php-api/pull/30
+* fix!: compare price hours in the configured timezone by @Baspa in https://github.com/Baspa/energyzero-php-api/pull/32
+* feat!: move to the public EnergyZero API by @Baspa in https://github.com/Baspa/energyzero-php-api/pull/33
+
+**Full Changelog**: https://github.com/Baspa/energyzero-php-api/compare/v2.0.0...v3.0.0
+
 ## v2.0.0 - 2026-03-17
 
 ### Added
