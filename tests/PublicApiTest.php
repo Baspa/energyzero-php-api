@@ -213,11 +213,12 @@ it('returns today\'s gas day after 06:00 Dutch time', function () {
         ->toBe(['price' => 0.903468411676, 'datetime' => '2026-11-13T05:00:00Z']);
 });
 
-it('returns the gas price for the hour a gas day starts', function () {
-    $energyZero = new EnergyZero(fakeApi(['13-11-2026' => recorded('gas-day-13-11-2026')], $this->history));
+it('rejects hourly lookups for gas before sending a request', function () {
+    $energyZero = new EnergyZero(fakeApi([], $this->history));
 
-    expect($energyZero->getPricesForHours('2026-11-13', [6], energyType: EnergyType::GAS))
-        ->toBe([['readingDate' => '2026-11-13T05:00:00Z', 'price' => 1.09319677812796]]);
+    expect(fn () => $energyZero->getPricesForHours('2026-11-13', [6], energyType: EnergyType::GAS))
+        ->toThrow(InvalidArgumentException::class, 'Gas only has daily prices')
+        ->and($this->history)->toHaveCount(0);
 });
 
 it('computes the average of the returned prices without rounding', function () {

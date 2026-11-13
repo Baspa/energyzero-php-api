@@ -135,12 +135,27 @@ it('returns the slot that contains now', function (string $now, string $date, st
 
 it('returns the slot that contains now in a configured timezone', function () {
     $energyZero = (new EnergyZero(
-        fakeApi(['14-11-2026' => hourlyResponse('2026-11-12T23:00:00Z', 48)], $this->history),
+        fakeApi([
+            '14-11-2026' => hourlyResponse('2026-11-12T23:00:00Z', 48),
+            '12-11-2026' => hourlyResponse('2026-11-10T23:00:00Z', 48),
+        ], $this->history),
         new FixedClock('2026-11-13T23:30:00Z'),
     ))->setTimezone('UTC');
 
     expect($energyZero->getCurrentPrice()['datetime'])->toBe('2026-11-13T23:00:00Z')
-        ->and(requestedDates($this->history))->toBe(['14-11-2026']);
+        ->and(requestedDates($this->history))->toBe(['14-11-2026', '12-11-2026']);
+});
+
+it('returns the current slot just after midnight in a timezone with a half-hour offset', function () {
+    $energyZero = (new EnergyZero(
+        fakeApi([
+            '13-11-2026' => hourlyResponse('2026-11-11T23:00:00Z', 48),
+            '11-11-2026' => hourlyResponse('2026-11-09T23:00:00Z', 48),
+        ], $this->history),
+        new FixedClock('2026-11-12T18:45:00Z'),
+    ))->setTimezone('Asia/Kolkata');
+
+    expect($energyZero->getCurrentPrice()['datetime'])->toBe('2026-11-12T18:00:00Z');
 });
 
 it('uses the system time by default', function () {

@@ -170,7 +170,7 @@ Before 06:00 Dutch time, the current gas price is the one for the gas day that s
 
 ### Get prices for specific hours
 
-Get the hourly prices for specific hours of a day, in the configured timezone:
+Get the hourly electricity prices for specific hours of a day, in the configured timezone:
 
 ```php
 $prices = (new EnergyZero())->getPricesForHours(
@@ -267,9 +267,9 @@ The package throws these exceptions from `Baspa\EnergyZero\Exceptions`. Both ext
 | Exception | Thrown when |
 |-----------|-------------|
 | `ApiException` | The API can't be reached or times out, rejects the request (the message includes the API's reason, for example `EnergyZero API returned HTTP 400: invalid interval type for electricity: daily`), returns another non-2xx status, or returns a response the package can't read. `getPrevious()` holds the original Guzzle or JSON exception; `getCode()` holds the HTTP status for non-2xx responses. |
-| `NoPricesException` | None of the requested days has prices (for example, tomorrow's prices aren't published yet). |
+| `NoPricesException` | None of the requested days has prices (for example, tomorrow's prices aren't published yet). A range where only some days are published returns those days without an exception. |
 
-Invalid input throws `\InvalidArgumentException` before a request is sent: an unknown integer interval or energy type, `Interval::DAY` for electricity, any other interval than `Interval::DAY` for gas, or an end date before the start date.
+Invalid input throws `\InvalidArgumentException` before a request is sent: an unknown integer interval or energy type, `Interval::DAY` for electricity, any other interval than `Interval::DAY` for gas, `getPricesForHours()` for gas, or an end date before the start date.
 
 ```php
 use Baspa\EnergyZero\Exceptions\ApiException;
@@ -284,7 +284,7 @@ try {
 }
 ```
 
-`request()` stays available for calls of your own. It returns the decoded JSON and throws an `ApiException` for every non-2xx response, a 404 included.
+`request()` stays available for calls of your own. It returns the decoded JSON, throws a `NoPricesException` when the API answers that it has no prices for the date, and an `ApiException` for every other non-2xx response.
 
 ## Upgrading from v2
 

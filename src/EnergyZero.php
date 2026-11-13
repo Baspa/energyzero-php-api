@@ -29,6 +29,8 @@ use Throwable;
  */
 class EnergyZero
 {
+    private const GRPC_NOT_FOUND = 5;
+
     private PriceType $defaultPriceType = PriceType::MARKET_WITH_VAT;
 
     private int $requestTimeout = 10;
@@ -95,6 +97,7 @@ class EnergyZero
      * @return array<mixed>
      *
      * @throws ApiException
+     * @throws NoPricesException
      */
     public function request(string $uri, array $params = []): array
     {
@@ -161,9 +164,10 @@ class EnergyZero
                 continue;
             }
 
-            foreach ($this->pricesForApiDate($date, $interval, $priceType, $energyType) as $timestamp => $price) {
-                $coveredDates[$this->apiDate(new DateTimeImmutable('@'.$timestamp))] = true;
+            $response = $this->pricesForApiDate($date, $interval, $priceType, $energyType);
+            $coveredDates += array_fill_keys($response['coveredDates'], true);
 
+            foreach ($response['prices'] as $timestamp => $price) {
                 if ($timestamp >= $from->getTimestamp() && $timestamp < $till->getTimestamp()) {
                     $prices[$timestamp] = $price;
                 }
@@ -210,11 +214,8 @@ class EnergyZero
         $now = $this->clock->now();
         $today = $now->setTimezone($this->timezone);
 
-        // Until 06:00 Dutch time, the current gas day is the one that started yesterday.
-        $firstDay = $energyType === EnergyType::GAS ? $today->modify('-1 day') : $today;
-
         $prices = $this->energyPrices(
-            $firstDay->format('Y-m-d'),
+            $today->modify('-1 day')->format('Y-m-d'),
             $today->format('Y-m-d'),
             $this->hourOrDay($energyType),
             $priceType,
@@ -245,7 +246,12 @@ class EnergyZero
     public function getPricesForHours(string $date, array $hours, PriceType|bool|null $priceType = null, EnergyType|int|null $energyType = null): array
     {
         $energyType = $this->resolveEnergyType($energyType);
-        $prices = $this->energyPrices($date, $date, $this->hourOrDay($energyType), $priceType, $energyType)['Prices'];
+
+        if ($energyType === EnergyType::GAS) {
+            throw new InvalidArgumentException('Gas only has daily prices; use gasPrices() instead of getPricesForHours().');
+        }
+
+        $prices = $this->energyPrices($date, $date, Interval::HOUR, $priceType, $energyType)['Prices'];
         $result = [];
 
         foreach ($prices as $price) {
@@ -403,7 +409,7 @@ class EnergyZero
     }
 
     /**
-     * @return array<int, Price>
+     * @return array{prices: array<int, Price>, coveredDates: list<string>}
      *
      * @throws ApiException
      */
@@ -415,12 +421,8 @@ class EnergyZero
                 'date' => $date,
                 'interval' => $interval->apiValue(),
             ]);
-        } catch (ApiException $e) {
-            if ($e->getCode() === 404) {
-                return [];
-            }
-
-            throw $e;
+        } catch (NoPricesException) {
+            return ['prices' => [], 'coveredDates' => [$date]];
         }
 
         $entries = $data[$priceType->value] ?? null;
@@ -444,7 +446,9 @@ class EnergyZero
             $prices[$timestamp] = ['readingDate' => $start, 'price' => (float) $value];
         }
 
-        return $prices;
+        $coveredDates = array_map(fn (int $timestamp) => $this->apiDate(new DateTimeImmutable('@'.$timestamp)), array_keys($prices));
+
+        return ['prices' => $prices, 'coveredDates' => array_values(array_unique([$date, ...$coveredDates]))];
     }
 
     /**
@@ -491,11 +495,15 @@ class EnergyZero
         return $energyType === EnergyType::GAS ? Interval::DAY : Interval::HOUR;
     }
 
-    private function httpError(ResponseInterface $response, ?Throwable $previous = null): ApiException
+    private function httpError(ResponseInterface $response, ?Throwable $previous = null): ApiException|NoPricesException
     {
         $status = $response->getStatusCode();
         $error = json_decode((string) $response->getBody(), true);
         $message = is_array($error) && is_string($error['message'] ?? null) ? $error['message'] : null;
+
+        if ($status === 404 && is_array($error) && ($error['code'] ?? null) === self::GRPC_NOT_FOUND) {
+            return new NoPricesException("EnergyZero API has no prices: {$message}", $status, $previous);
+        }
 
         return new ApiException(
             "EnergyZero API returned HTTP {$status}".($message === null ? '.' : ": {$message}"),

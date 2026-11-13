@@ -46,14 +46,23 @@ it('throws an ApiException with the API message on a 4xx response', function () 
         });
 });
 
-it('throws an ApiException on a 404 from request()', function () {
+it('throws a NoPricesException when the API reports no prices from request()', function () {
     $this->mockHandler->append(noPrices());
 
     expect(fn () => $this->energyZero->request('prices'))
-        ->toThrow(function (ApiException $e) {
+        ->toThrow(function (NoPricesException $e) {
             expect($e->getCode())->toBe(404)
-                ->and($e->getMessage())->toBe('EnergyZero API returned HTTP 404: prices do not span the whole requested date');
+                ->and($e->getMessage())->toBe('EnergyZero API has no prices: prices do not span the whole requested date');
         });
+});
+
+it('throws an ApiException on a 404 that is not the API reporting no prices', function () {
+    $this->mockHandler->append(new Response(404), new Response(404, [], json_encode(['code' => 3, 'message' => 'bad request'])));
+
+    expect(fn () => $this->energyZero->energyPrices('2026-11-13', '2026-11-13'))
+        ->toThrow(ApiException::class, 'EnergyZero API returned HTTP 404.')
+        ->and(fn () => $this->energyZero->energyPrices('2026-11-13', '2026-11-13'))
+        ->toThrow(ApiException::class, 'EnergyZero API returned HTTP 404: bad request');
 });
 
 it('handles non-2xx responses the same when http_errors is disabled', function () {
