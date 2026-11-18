@@ -2,6 +2,16 @@
 
 All notable changes to `energyzero-php-api` will be documented in this file.
 
+## v3.1.0 - 2026-11-18
+
+### Added
+
+- PHP 8.6 support (#34): the test matrix now also runs on PHP 8.6, on Ubuntu and Windows with lowest and stable dependencies. Verified against PHP 8.6.0RC7 and the 8.6 nightly; no code changes were needed.
+
+### Development
+
+- PHPStan 2.3.6 or newer is required.
+
 ## v3.0.0 - 2026-11-13
 
 ### Breaking changes
